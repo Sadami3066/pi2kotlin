@@ -16,6 +16,19 @@
 5. **最大的风险不在技术，而在生态断裂**：本机 `~/.pi/agent/settings.json` 目前声明 13 个 npm 扩展包（pi-subagents、pi-memory、pi-chrome、pi-mcp-adapter、pi-intercom、pi-rewind、pi-hud、pi-tool-display、pi-background-tasks、pi-web-access、rpiv-ask-user-question、rpiv-todo、rpiv-btw），`~/.pi/agent/skills` 有 6 个 skill 目录，`mcp.json` 配了 4 个 MCP server。任何"不兼容 TS 扩展"的 Kotlin 版本，在替代日常使用时都是功能倒退。**建议先把 Kotlin 版定位成 headless 内核（可共存），不要一上来替代交互式 pi。**
 6. **推荐路径**：先做方案 A（headless 内核：CLI + print/json/rpc + 工具 + 会话 + 设置/认证/模型 + 压缩 + 系统提示词/上下文文件/skills/prompt templates），约 **15–20k 行 Kotlin**（不含 Provider 层；含最小 Provider 层约 18–25k）；验证通过后再做方案 B（+ 最小交互式 TUI，JLine3 方案 +4–6k、自研 +6–9k）。方案 C（扩展兼容）推迟，且必须先在"Kotlin SPI（生态不兼容）"和"Node 侧车（保留 Node 依赖）"之间做明确取舍。
 
+### 1.1 与当前仓库状态的关系
+
+截至本文写作时，仓库是 Gradle 多模块骨架（`settings.gradle.kts`：`pi-ai`、`pi-agent`、`pi-coding-agent`），`pi-ai` 已落地类型/消息/事件流/模型目录，`pi-agent` 尚未开始，`pi-coding-agent` 只有占位 `Main.kt`。`docs/ARCHITECTURE.md` 的"待定"两条（交互式 TUI 方案、扩展机制）正是本文 §11 与 §14 要回答的问题：
+
+| ARCHITECTURE.md 待定项 | 本文结论 | 对应章节 |
+|---|---|---|
+| 交互式 TUI：JLine3 自建 / 先不做只做 print/json/rpc | 先不做（方案 A），A 验收通过后再用 JLine3 做最小集（方案 B）；不做全屏/鼠标/内联图片 | §11、§14.2 |
+| 扩展机制：重新设计 SPI 或嵌入 JS 引擎 | 两者都推迟（方案 C）；先保证"读到扩展资源不崩、不误删配置"；若必须替代日常 pi 则选 Node 侧车而非 SPI | §7、§14.2 C1/C2 |
+| 依赖方向 `pi-coding-agent → pi-agent → pi-ai` | 与本分析一致：coding-agent 对下层的依赖面很薄（§13.1、§13.2），主要工作量在产品层 | §13 |
+| OkHttp / kotlinx.serialization / coroutines 选型 | 与本文推荐的 JVM 替代一致；`java.net.http` 仅在不想引入 OkHttp 时作为备选 | §12 |
+
+因此 `pi-coding-agent` 模块的**第一个可交付物应当是方案 A**（headless 内核 + RPC 协议），而不是接口壳或 TUI。
+
 ---
 
 ## 2. 包结构与依赖
@@ -500,7 +513,7 @@ TUI 耦合：每个工具的 `renderers/*.ts`（1,007 行）只被 interactive �
 | `uuidv7`（pi-ai 提供） | 会话 id | 自写（时间戳 + 随机） | 低 |
 | `process.stdout.write` 接管 + 背压 | `core/output-guard.ts` | `System.out`/`FileDescriptor.out` + 自写背压队列 | 低 |
 
-JVM 侧建议栈：Kotlin 2.x + JDK 21、kotlinx-coroutines（事件流）、kotlinx-serialization-json（严格 JSONL）、java.net.http（Provider/HTTP）、JLine3（TUI 行编辑）、Clikt 或 picocli（CLI）、GraalVM native-image 或 jpackage（分发）。
+JVM 侧建议栈：沿用仓库已定的 Kotlin 2.4.x + JDK 21 + kotlinx-coroutines（事件流）+ kotlinx-serialization-json（严格 JSONL）+ OkHttp 5（Provider/HTTP，见 `docs/ARCHITECTURE.md`）；新增 JLine3（TUI 行编辑）、Clikt 或 picocli（CLI）、GraalVM native-image 或 jpackage（分发）。`java.net.http` 可作为不引入 OkHttp 时的备选。
 
 ---
 
