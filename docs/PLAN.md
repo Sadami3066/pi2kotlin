@@ -109,8 +109,9 @@ AgentMessage/AgentEvent、双层 agent loop、并行/串行工具执行、hooks�
 
 已知偏差：codex 的 WebSocket 传输/zstd 压缩未实现（回退 SSE）；bedrock 凭据链仅 env/bearer（无 profile/IMDS/STS）；radius 动态目录仅留接口。
 
-### M6 打磨与发布
+### M6 打磨与发布（已完成主体）
 
-- API 稳定性检查、KDoc、示例工程（Android app + JVM demo）
-- Maven 发布配置（本地/私有仓库）
-- R8/体积检查、启动耗时
+- Maven 发布配置（jvm jar / android aar / sources / pom），`publishToMavenLocal` 可用
+- 示例工程：`examples/jvm-demo`（`./gradlew :examples:jvm-demo:run` 端到端跑通）、`examples/android-demo`（独立 Gradle 工程，消费发布产物，`scripts/build-android-demo.sh` 产出 debug APK）
+- SDK 使用文档 `docs/SDK.md`
+- 剩余可选：KDoc 全量、R8/体积与启动耗时测量、私有仓库发布
