@@ -8,31 +8,69 @@ import dev.pi.ai.SimpleStreamOptions
 import dev.pi.ai.StreamOptions
 import dev.pi.ai.TranscriptContext
 import dev.pi.ai.api.ApiProvider
+import dev.pi.ai.api.anthropicMessagesApi
+import dev.pi.ai.api.googleGenerativeAIApi
+import dev.pi.ai.api.googleVertexApi
 import dev.pi.ai.api.openAICompletionsApi
+import dev.pi.ai.api.openAIResponsesApi
+import dev.pi.ai.auth.AuthResolver
+import dev.pi.ai.auth.CompositeAuth
+import dev.pi.ai.auth.CredentialStore
 import dev.pi.ai.auth.EnvApiKeyAuth
+import dev.pi.ai.auth.StoredApiKeyAuth
+import dev.pi.ai.auth.oauth.bundledOAuthFlows
+import dev.pi.ai.auth.oauth.oauthResolver
 import dev.pi.ai.http.HttpTransport
 
 private const val OPENAI_COMPLETIONS_API = "openai-completions"
+private const val OPENAI_RESPONSES_API = "openai-responses"
+private const val ANTHROPIC_MESSAGES_API = "anthropic-messages"
+private const val GOOGLE_GENERATIVE_AI_API = "google-generative-ai"
+private const val GOOGLE_VERTEX_API = "google-vertex"
 
-fun builtinProviders(transport: HttpTransport): List<Provider> = BUILTIN_PROVIDER_SPECS.map { spec ->
-    val allModels = ModelCatalog.findByProvider(spec.id)
-    val chatModels = allModels.filterIsInstance<Model>()
-    val apis = allModels.map { it.api }.distinct()
-    Provider(
-        id = spec.id,
-        name = spec.name,
-        baseUrl = spec.baseUrl,
-        headers = null,
-        apiProviders = apis.associateWith { api -> apiFactory(api, transport) },
-        models = chatModels,
-        allModels = allModels,
-        auth = EnvApiKeyAuth(spec.authLabel, spec.envVars),
-    )
+fun builtinProviders(
+    transport: HttpTransport,
+    credentialStore: CredentialStore? = null,
+): List<Provider> {
+    val oauthFlows = bundledOAuthFlows()
+    return BUILTIN_PROVIDER_SPECS.map { spec ->
+        val allModels = ModelCatalog.findByProvider(spec.id)
+        val chatModels = allModels.filterIsInstance<Model>()
+        val apis = allModels.map { it.api }.distinct()
+        Provider(
+            id = spec.id,
+            name = spec.name,
+            baseUrl = spec.baseUrl,
+            headers = null,
+            apiProviders = apis.associateWith { api -> apiFactory(api, transport) },
+            models = chatModels,
+            allModels = allModels,
+            auth = providerAuth(spec, oauthFlows, credentialStore, transport),
+        )
+    }
 }
 
-private fun apiFactory(api: String, transport: HttpTransport): () -> ApiProvider {
-    if (api == OPENAI_COMPLETIONS_API) return { openAICompletionsApi(transport) }
-    return { UnimplementedApiProvider(api) }
+private fun providerAuth(
+    spec: BuiltinProviderSpec,
+    oauthFlows: Map<String, dev.pi.ai.auth.oauth.OAuthAuth>,
+    credentialStore: CredentialStore?,
+    transport: HttpTransport,
+): AuthResolver {
+    if (credentialStore == null) return EnvApiKeyAuth(spec.authLabel, spec.envVars)
+    val resolvers = buildList {
+        oauthFlows[spec.id]?.let { flow -> add(oauthResolver(spec.id, flow, credentialStore, transport)) }
+        add(StoredApiKeyAuth(spec.id, credentialStore, spec.envVars))
+    }
+    return CompositeAuth(resolvers)
+}
+
+private fun apiFactory(api: String, transport: HttpTransport): () -> ApiProvider = when (api) {
+    OPENAI_COMPLETIONS_API -> ({ openAICompletionsApi(transport) })
+    OPENAI_RESPONSES_API -> ({ openAIResponsesApi(transport) })
+    ANTHROPIC_MESSAGES_API -> ({ anthropicMessagesApi(transport) })
+    GOOGLE_GENERATIVE_AI_API -> ({ googleGenerativeAIApi(transport) })
+    GOOGLE_VERTEX_API -> ({ googleVertexApi(transport) })
+    else -> ({ UnimplementedApiProvider(api) })
 }
 
 private class UnimplementedApiProvider(override val api: String) : ApiProvider {

@@ -8,6 +8,7 @@ import dev.pi.agent.StandardAgentMessage
 import dev.pi.agent.ThinkingLevel
 import dev.pi.agent.asAssistantMessage
 import dev.pi.agent.asLlmMessage
+import dev.pi.agent.asAgentMessage
 import dev.pi.ai.AssistantMessage
 import dev.pi.ai.BlockContent
 import dev.pi.ai.Content
@@ -19,7 +20,18 @@ import dev.pi.ai.StopReason
 import dev.pi.ai.SystemMessage
 import dev.pi.ai.TextContent
 import dev.pi.ai.UserMessage
+import dev.pi.ai.CacheRetention
+import dev.pi.ai.SimpleStreamOptions
+import dev.pi.ai.StreamOptions
 import dev.pi.ai.utils.Retry
+import dev.pi.ai.utils.isContextOverflow
+import dev.pi.coding.compaction.CompactionResult
+import dev.pi.coding.compaction.Summarize
+import dev.pi.coding.compaction.SummarizeRequest
+import dev.pi.coding.compaction.compact
+import dev.pi.coding.compaction.estimateMessagesTokens
+import dev.pi.coding.compaction.prepareCompaction
+import dev.pi.coding.compaction.shouldCompact
 import dev.pi.coding.models.ModelRuntime
 import dev.pi.coding.prompt.LoadedResources
 import dev.pi.coding.prompt.SystemPromptInput
@@ -56,6 +68,12 @@ sealed interface SessionEvent {
     data class RetrySucceeded(val attempt: Int) : SessionEvent
 
     data class RetryExhausted(val attempts: Int, val errorMessage: String?) : SessionEvent
+
+    data class CompactionStarted(val tokensBefore: Long) : SessionEvent
+
+    data class CompactionFinished(val tokensBefore: Long, val tokensAfter: Long?) : SessionEvent
+
+    data class CompactionFailed(val errorMessage: String?) : SessionEvent
 }
 
 class CodingHooks(
@@ -103,6 +121,84 @@ class AgentSession internal constructor(
 
     val systemPrompt: String get() = agent.state.systemPrompt
 
+    private val summarize = Summarize { request -> summarizeWithRuntime(request) }
+
+    private suspend fun summarizeWithRuntime(request: SummarizeRequest): AssistantMessage {
+        val context = dev.pi.ai.Context(systemPrompt = request.systemPrompt, messages = request.messages)
+        val options = SimpleStreamOptions(
+            stream = StreamOptions(cacheRetention = CacheRetention.None, sessionId = sessionManager.sessionId),
+        )
+        return modelRuntime.completeSimple(request.model, context, options, null)
+    }
+
+    suspend fun compact(customInstructions: String? = null): CompactionResult? {
+        val settings = this.settings.getCompactionSettings()
+        if (!settings.enabled) return null
+        val branch = sessionManager.getBranch()
+        val preparation = prepareCompaction(branch, settings, agent.state.model, customInstructions) ?: return null
+        val result = try {
+            compact(preparation, summarize)
+        } catch (error: Exception) {
+            sessionEvents.tryEmit(SessionEvent.CompactionFailed(error.message))
+            throw error
+        } ?: return null
+        applyCompaction(result)
+        return result
+    }
+
+    private suspend fun maybeCompactBeforePrompt() {
+        val settings = this.settings.getCompactionSettings()
+        if (!settings.enabled) return
+        val messages = agent.state.messages.mapNotNull { it.asLlmMessage() }
+        val tokens = estimateMessagesTokens(messages)
+        if (!shouldCompact(tokens, agent.state.model.contextWindow, settings)) return
+        val result = try {
+            compact()
+        } catch (error: Exception) {
+            sessionEvents.tryEmit(SessionEvent.CompactionFailed(error.message))
+            return
+        } ?: return
+        sessionEvents.tryEmit(SessionEvent.CompactionFinished(result.tokensBefore, result.estimatedTokensAfter))
+    }
+
+    private suspend fun applyCompaction(result: CompactionResult) {
+        sessionEvents.tryEmit(SessionEvent.CompactionStarted(result.tokensBefore))
+        val systemMessage = SystemMessage(
+            content = PlainTextContent(""),
+            sections = sections.sections,
+            toolsAdded = agentTools().map { it.toTool() },
+            timestamp = System.currentTimeMillis(),
+        )
+        sessionManager.appendCompaction(
+            summary = result.summary,
+            firstKeptEntryId = result.firstKeptEntryId,
+            tokensBefore = result.tokensBefore,
+            usage = result.usage,
+            details = result.details,
+            systemMessage = systemMessage,
+        )
+        rebuildContextFromSession()
+        sessionEvents.tryEmit(SessionEvent.CompactionFinished(result.tokensBefore, result.estimatedTokensAfter))
+    }
+
+    private suspend fun rebuildContextFromSession() {
+        val context = sessionManager.buildSessionContext()
+        val restored: MutableList<AgentMessage> = context.messages.map { it.asAgentMessage() }.toMutableList()
+        if (restored.firstOrNull()?.asLlmMessage() !is SystemMessage) {
+            restored.add(
+                0,
+                SystemMessage(
+                    content = PlainTextContent(""),
+                    sections = sections.sections,
+                    toolsAdded = agentTools().map { it.toTool() },
+                    timestamp = System.currentTimeMillis(),
+                ).asAgentMessage(),
+            )
+        }
+        entryIdsByMessage.clear()
+        agent.state.messages = restored
+    }
+
     internal fun start() {
         internalUnsubscribe = agent.subscribe { event, _ ->
             sessionEvents.tryEmit(SessionEvent.AgentEventReceived(event))
@@ -130,6 +226,7 @@ class AgentSession internal constructor(
             return
         }
         syncSystemPromptIfNeeded()
+        maybeCompactBeforePrompt()
         agent.prompt(transformed, images)
         runRetryLoop()
         sessionEvents.tryEmit(SessionEvent.Settled)
@@ -150,6 +247,21 @@ class AgentSession internal constructor(
                     sessionEvents.tryEmit(SessionEvent.RetryExhausted(retryAttempt, failed.errorMessage))
                     retryAttempt = 0
                 }
+                return
+            }
+            if (isContextOverflow(failed, agent.state.model.contextWindow)) {
+                val compacted = try {
+                    compact()
+                } catch (error: Exception) {
+                    sessionEvents.tryEmit(SessionEvent.CompactionFailed(error.message))
+                    null
+                }
+                if (compacted != null) {
+                    agent.continueRun()
+                    continue
+                }
+                sessionEvents.tryEmit(SessionEvent.RetryExhausted(retryAttempt, failed.errorMessage))
+                retryAttempt = 0
                 return
             }
             if (!Retry.isRetryableAssistantError(failed)) return

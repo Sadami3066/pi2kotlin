@@ -27,7 +27,7 @@ data class ResolvedAuth(
     val source: String,
 )
 
-sealed interface AuthResolver {
+interface AuthResolver {
     suspend fun resolve(overrides: AuthOverrides? = null): ResolvedAuth?
 }
 

@@ -52,6 +52,10 @@ class CredentialStore(
         writeRaw(readRaw() + (providerId to encodeCredential(credential)))
     }
 
+    fun writeRawCredential(providerId: String, credential: JsonElement) {
+        writeRaw(readRaw() + (providerId to credential))
+    }
+
     fun delete(providerId: String) {
         val raw = readRaw()
         if (!raw.containsKey(providerId)) return

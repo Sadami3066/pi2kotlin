@@ -45,7 +45,7 @@ class ProviderComposer(
 ) {
     suspend fun compose(): Models {
         val models = Models()
-        val builtins = builtinProviders(transport)
+        val builtins = builtinProviders(transport, credentialStore)
         val builtinById = LinkedHashMap<String, Provider>()
         for (provider in builtins) {
             builtinById[provider.id] = provider

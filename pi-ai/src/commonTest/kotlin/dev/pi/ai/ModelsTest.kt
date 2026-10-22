@@ -504,14 +504,15 @@ class ModelsTest {
     @Test
     fun placeholderApiThrowsNotImplemented() = runTest {
         val providers = builtinProviders(NoopTransport).associateBy { it.id }
-        val anthropic = assertNotNull(providers["anthropic"])
+        val bedrock = assertNotNull(providers["amazon-bedrock"])
         val models = Models()
-        models.setProvider(anthropic)
-        val model = anthropic.models.first()
+        models.setProvider(bedrock)
+        val model = bedrock.models.first()
+        assertEquals("bedrock-converse-stream", model.api)
         val error = assertFailsWith<NotImplementedError> {
             models.stream(model, userContext(), StreamOptions(apiKey = "test"))
         }
-        assertTrue(error.message!!.contains("anthropic-messages"))
+        assertTrue(error.message!!.contains("bedrock-converse-stream"))
     }
 
     private fun tempAuthDirectory() =

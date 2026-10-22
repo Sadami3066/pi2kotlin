@@ -67,7 +67,7 @@ AgentMessage/AgentEvent、双层 agent loop、并行/串行工具执行、hooks�
 
 验收：113 tests 全绿（B01–B13、B15–B50 均有直接断言，B14 已实现）；另有跨模块 e2e：Agent → pi-ai Models → faux provider 全链路测试。
 
-### M5 pi-coding-agent SDK 层（进行中，主体已完成）
+### M5 pi-coding-agent SDK 层（主体已完成，收尾中）
 
 已完成：
 - `SessionManager`：会话 JSONL v1-v3 读写、延迟建文件、树/分支/fork、context_edit 投影、compaction 感知重建、统计、列表/恢复（55 tests）
@@ -80,15 +80,25 @@ AgentMessage/AgentEvent、双层 agent loop、并行/串行工具执行、hooks�
 
 验收：三模块 `./gradlew clean build` 全绿；pi-coding-agent 304 JVM tests + 304 Android host tests。
 
-剩余（M5 收尾）：
-- compaction（自动压缩阈值/切点/摘要、branch summary）与 session 级重试/overflow 恢复
-- bash 的 JVM/Android `ShellExecutor` 默认实现（ProcessBuilder，可选注入）
-- SDK 开发者文档 + Android demo app
-- AgentSession 的扩展 hook 细化（custom message 持久化、工具变更、input 流程）
+已完成收尾项：
+- compaction + branch summary 移植（`coding/compaction`，56 tests）；AgentSession 已接入：prompt 前自动压缩、上下文溢出的自动压缩恢复、`session.compact()` 公开 API
+- session 级自动重试（指数退避、context_edit 省略失败轮、retry 事件）
+- `UnixShellExecutor`（JVM/Android 共享源集，ProcessBuilder、超时/abort 杀进程树、尾部截断，13 tests）
+- SDK 开发者文档 `docs/SDK.md`
 
-### M3 其余 provider（与 M5 并列）
+剩余：
+- AgentSessionRuntime.fork 接入 branch summary（`generateBranchSummary` 已有，待接线）
+- Android demo app + 发布配置
+- 扩展 hook 细化（custom message 持久化、input 流程）
 
-`openai-completions` 已覆盖 28 个 provider；其余 13 个 API（anthropic-messages、openai-responses、azure、google、vertex、mistral、bedrock、codex、pi-messages、images、classifiers）与 9 个 OAuth flow 待实现。
+### M3 其余 provider（进行中）
+
+已完成 5 个 chat API 实现：`openai-completions`、`openai-responses`、`anthropic-messages`、`google-generative-ai`、`google-vertex`。
+模型目录 42 个 provider 中 **36 个完全可用**；剩余：amazon-bedrock、azure（部分 openai-completions 已可用）、mistral、openai-codex、radius(pi-messages)、typesafe（仅 classifier）。
+
+OAuth：基础设施（PKCE/设备码/回调服务器/凭据刷新）已完成，anthropic、openai-chatgpt、github-copilot 三个流程可用；剩余 openai-codex、xai、kimi、meta、radius、openrouter。
+
+其余待实现 API：azure-openai-responses、mistral-conversations、bedrock-converse-stream（SigV4/事件流）、openai-codex-responses（WebSocket/zstd 可选）、pi-messages、图片 API（openrouter-images）、classifier API（typesafe/openai-decisions/cloudflare/llama-cpp）。
 
 ### M6 打磨与发布
 
