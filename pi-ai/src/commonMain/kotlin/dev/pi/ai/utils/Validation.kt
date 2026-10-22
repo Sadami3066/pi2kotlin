@@ -583,7 +583,7 @@ private fun expandExponent(repr: String): String {
 
 private fun jsonNumber(value: Double): JsonPrimitive = JsonUnquotedLiteral(jsNumberToString(value))
 
-private fun jsonDeepCopy(value: JsonValue): JsonValue = when (value) {
+internal fun jsonDeepCopy(value: JsonValue): JsonValue = when (value) {
     is JsonObject -> JsonObject(value.mapValues { (_, nested) -> jsonDeepCopy(nested) })
     is JsonArray -> JsonArray(value.map(::jsonDeepCopy))
     else -> value

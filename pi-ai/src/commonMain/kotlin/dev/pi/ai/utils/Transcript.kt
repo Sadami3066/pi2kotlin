@@ -1,14 +1,12 @@
 package dev.pi.ai.utils
 
 import dev.pi.ai.Context
-import dev.pi.ai.JsonValue
 import dev.pi.ai.Message
 import dev.pi.ai.PlainTextContent
 import dev.pi.ai.SystemMessage
 import dev.pi.ai.Tool
 import dev.pi.ai.ToolReference
 import dev.pi.ai.TranscriptContext
-import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -82,7 +80,7 @@ fun collapseSystemMessages(context: TranscriptContext): TranscriptContext {
 fun toToolDeclaration(tool: Tool): Tool = Tool(
     name = tool.name,
     description = tool.description,
-    parameters = deepCopyJson(tool.parameters) as JsonObject,
+    parameters = jsonDeepCopy(tool.parameters) as JsonObject,
     constrainedSampling = tool.constrainedSampling,
 )
 
@@ -114,10 +112,4 @@ fun getToolStateChanges(previous: List<Tool>, current: List<Tool>): ToolStateCha
         currentTool == null || !declarationsEqual(tool, currentTool)
     }.map { ToolReference(name = it.name) }
     return ToolStateChanges(added = added, removed = removed)
-}
-
-private fun deepCopyJson(value: JsonValue): JsonValue = when (value) {
-    is JsonObject -> JsonObject(value.mapValues { (_, nested) -> deepCopyJson(nested) })
-    is JsonArray -> JsonArray(value.map(::deepCopyJson))
-    else -> value
 }
