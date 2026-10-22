@@ -90,8 +90,11 @@ AgentMessage/AgentEvent、双层 agent loop、并行/串行工具执行、hooks�
 - `AgentSessionRuntime.fork(entryId, summarizeAbandonedBranch = true)` 接入 branch summary
 - Maven 发布配置（`maven-publish`，`publishToMavenLocal` 产出 jvm jar/android aar/sources/pom，依赖正确）
 
+已完成：
+- 示例工程：`examples/jvm-demo`（Gradle application，`./gradlew :examples:jvm-demo:run` 端到端打印流式回复并落会话文件）、`examples/android-demo`（独立 Gradle 工程，消费 mavenLocal 发布的 android 变体，产出 debug APK）
+- 根构建不再声明插件版本，各模块/示例自力声明版本（解决 AGP 9 application 与 KMP 的类路径冲突）；Android demo 使用经典 DSL + kotlin-android 2.4.21
+
 剩余：
-- Android demo app
 - 扩展 hook 细化（custom message 持久化、input 流程）
 
 ### M3 provider 矩阵（已完成）

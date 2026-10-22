@@ -48,6 +48,15 @@ try {
 
 需要 JDK 21。Gradle 9.8.2（wrapper 自带）。
 
+## 示例
+
+```bash
+./gradlew :examples:jvm-demo:run      # JVM 端到端演示（faux provider，离线可跑）
+./scripts/build-android-demo.sh       # 发布到 ~/.m2 并构建 Android demo APK
+```
+
+Android demo 源码：`examples/android-demo`（独立构建，依赖 `dev.pi:pi-coding-agent-android` 发布产物）。
+
 ## 文档
 
 - `docs/ARCHITECTURE.md`：技术选型与架构决策
