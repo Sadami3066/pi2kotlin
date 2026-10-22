@@ -284,4 +284,421 @@ Kotlin 表达方案（推荐 A，见 8.3 的完整理由）：
 
 `ProxyStreamOptions` = 上述 + `signal?`、`authToken: string`、`proxyUrl: string`（`proxy.ts:63-70`）。
 
-<!-- PART2 -->
+## 3. 事件流完整规范
+
+### 3.1 通用规则
+
+1. sink 是异步的：`AgentEventSink = (event) => Promise<void> | void`（`agent-loop.ts:35`），所有 `emit(...)` 都被 await。Agent 的 sink 是 `processEvents`，它会先归约内部状态，再按注册顺序串行 await 每个订阅者（`agent.ts:575-622`）。
+2. 一次 run 以一个 `agent_start` 开始、以一个 `agent_end` 结束；`agent_end` 之后不再有循环事件，但 `Agent` 的 `isStreaming` 要等 `agent_end` 的订阅者全部 settle 才转 false（`agent.ts:559-566`；测试 `test/agent.test.ts:362-433`）。
+3. 消息生命周期事件覆盖 system→user→assistant→toolResult。`message_update` 只用于 assistant 流式更新；system/user/toolResult 只有 start/end。
+4. 轮次由 `turn_start`/`turn_end` 包裹。第一个 `turn_start` 由入口函数在 agent_start 之后立刻发出（`agent-loop.ts:127,156`）；后续每轮在 `prepareNextTurn` 之后、pending 消息事件之前发出（`agent-loop.ts:216`）。
+5. `agent_end.messages` 是“本次 loop 调用新增的全部消息”：prompt 运行包含初始 prompt 与循环中合成的 system 消息（`agent-loop.ts:119-124`），continue 运行只包含本次新增（`agent-loop.ts:152`）。Agent 失败路径的 `agent_end.messages` 只有合成的失败 assistant 消息（`agent.ts:557`）。
+6. 事件 payload 中的 message 对象与内部上下文共享引用（顶层浅拷贝的情况见 3.3），订阅者应视为只读。
+
+### 3.2 精确序列
+
+(a) `prompt("Hello")`，无工具，正常 stop（README 与 `test/agent-loop.test.ts:114-158`）：
+
+```text
+agent_start
+turn_start
+message_start{user}
+message_end{user}
+message_start{assistant}          # 流有 start 事件时在流开始时；没有 start 时在 done 处补发
+message_update{assistant} * N     # 只有流式 delta 才有
+message_end{assistant}
+turn_end{message: assistant, toolResults: []}
+agent_end{messages: [user, assistant]}
+```
+
+(b) 带工具调用再给最终回答（`README.md` Event Flow 段；`test/agent-loop.test.ts:305-399`）：
+
+```text
+agent_start
+turn_start
+message_start/end{user}
+message_start{assistant}
+message_update* 
+message_end{assistant(toolUse)}
+tool_execution_start{id,name,args}
+tool_execution_update*            # 工具调用 onUpdate 时
+tool_execution_end{id,name,result,isError,durationMs?}
+message_start{toolResult}
+message_end{toolResult}
+turn_end{message: assistant, toolResults: [toolResult]}
+turn_start                        # 下一轮
+message_start{assistant}
+message_update*
+message_end{assistant}
+turn_end{message: assistant, toolResults: []}
+agent_end{messages: [user, assistant, toolResult, assistant]}
+```
+
+(c) `finishTurn` 返回 `{action:"end"}` 的精确序列（测试断言原文，`test/agent-loop.test.ts:1713-1729`）：
+
+```text
+agent_start, turn_start,
+message_start/end{system(工具声明)},   # context.tools 与转录声明不一致时合成
+message_start/end{user},
+message_start/end{assistant},
+tool_execution_start, tool_execution_end,
+message_start/end{toolResult},
+turn_end, agent_end
+```
+
+该用例同时断言 `messages` 角色为 `["system","user","assistant","toolResult"]`，说明工具声明 system 消息进入了返回消息与新上下文（`test/agent-loop.test.ts:1710-1713`）。
+
+(d) `continue()` 从 user/toolResult 尾巴续跑（`test/agent-loop.test.ts:2031-2070`）：
+
+```text
+agent_start
+turn_start
+# 没有 user 消息事件
+message_start/end{assistant}
+turn_end
+agent_end
+```
+
+测试断言 message_end 只有 1 条且为 assistant（`test/agent-loop.test.ts:2062-2069`）。
+
+(e) assistant `stopReason` 为 `error`/`aborted`（测试 `test/agent-loop.test.ts:1162-1215`、`test/agent.test.ts:331-360`、`test/e2e.test.ts:208-219`）：
+
+```text
+agent_start, turn_start,
+message_start/end{user},
+message_start/end{assistant(error|aborted)},
+# finishTurn 在此被调用（无事件）
+turn_end{message: assistant, toolResults: []},
+agent_end{messages: [...]}
+```
+
+该路径不轮询 steering/follow-up，也忽略 `finishTurn` 的决策（`agent-loop.ts:254-265`；测试断言的调用计数为 providerCalls=1、followUpPolls=0）。
+
+(f) streamFn 违约 throw（Agent 层，`test/agent.test.ts:331-360`）：
+
+```text
+agent_start, turn_start,
+message_start/end{user},
+message_start/end{assistant(stopReason:"error", errorMessage:"provider exploded")},
+turn_end, agent_end
+```
+
+失败消息由 `handleRunFailure` 合成（`agent.ts:542-558`），`agent.state.errorMessage` 同步写入。
+
+### 3.3 流式 partial 的构造方式（逐行）
+
+`streamAssistantResponse`（`agent-loop.ts:386-479`）是唯一把 `AssistantMessageEvent` 映射为 `AgentEvent` 的地方：
+
+1. 请求前：`transformContext`（可选，AgentMessage→AgentMessage，仅影响本次请求，不回写上下文）→ `convertToLlm`（必填，AgentMessage→Message）→ `normalizeContext({messages})` → `getApiKey`（每次请求重新取，用于过期 OAuth token）→ `streamFn(model, llmContext, {...config, apiKey, identity: mergeClientIdentity(DEFAULT_AGENT_IDENTITY, config.identity), signal})`（`agent-loop.ts:397-417`）。
+2. `start` 事件：`partialMessage = event.partial`，把它 push 进 `context.messages`（同一引用），`addedPartial = true`，发 `message_start{message: {...partialMessage}}`（顶层浅拷贝）（`agent-loop.ts:426-431`）。
+3. 文本/thinking/toolcall 的 start/delta/end 事件：若已有 partial，则 `partialMessage = event.partial`，替换 `context.messages` 最后一个元素，发 `message_update{message: {...partialMessage}, assistantMessageEvent: event}`。`message` 是浅拷贝；`assistantMessageEvent.partial` 是 pi-ai 定义的“共享实时对象”，不是事件时刻快照（`ai/types.ts:796-811`）。没见过 `start` 时这些事件被忽略（`agent-loop.ts:442-451`）。
+4. `done`/`error`：`finalMessage = await response.result()`，然后 `Object.assign(finalMessage, {thinkingLevel: config.reasoning ?? "off"})`——即每条最终 assistant 消息都会记录本次请求的 thinking level，值为 `"off"` 或请求级别（`agent-loop.ts:418-419,453-466`）。若之前加过 partial，用 finalMessage 替换数组最后一个元素（不会再发 message_start）；否则 push 并补发 `message_start{...finalMessage}`。最后发 `message_end{message: finalMessage}`（`message_end` 直接传 finalMessage，不再浅拷贝）。
+5. 流迭代自然结束但没有 done/error：走与 4 相同的收尾逻辑（`agent-loop.ts:470-478`）。若流既不结束也不产出终态，`response.result()` 会永久挂起——proxy 之所以在 EOF 时合成 error 事件就是为了避免这种挂起（`proxy.ts:219-230`）。
+6. `durationMs` 不由 loop 设置，而由 `AssistantMessageEventStream` 在 push done/error 或 `end(result)` 时补上（单调时钟，且不覆盖已有值/早于流创建时间的消息；`ai/utils/event-stream.ts:91-130`）。
+7. 消息结束事件的 payload 与上下文共享同一个对象；`message_update.message` 的 `content` 数组与实时 partial 共享（浅拷贝）。Kotlin 若把消息建模为不可变 data class，需明确并在测试中固定“共享/复制”策略；推荐与 TS 一致：对消息做顶层 copy（`copy()` 共享 content 列表），实时对象由 pi-ai 流负责。
+
+### 3.4 订阅者观察到的顺序与结算
+
+- `Agent.subscribe(listener)` 把 listener 放进 `Set`，返回 `() => this.listeners.delete(listener)`（类型标 `() => void`，实际返回 boolean；`agent.ts:275-278`）。
+- 注册顺序即调用顺序；一个事件的 listener 依次 await 完成后才处理下一个事件（`agent.ts:619-621`）。没有初识事件，状态 mutator 不发事件（测试 `test/agent.test.ts:309-329`）。
+- listener 收到 `(event, signal)`，`signal` 是当前 run 的 AbortController signal；没有 activeRun 时 `processEvents` 抛 `"Agent listener invoked outside active run"`（`agent.ts:615-618`）。
+- listener 抛错会沿 sink 向上传播，成为 run 失败：Agent 走 `handleRunFailure` 再发一轮 `message_start/message_end/turn_end/agent_end`（可能再次调用抛错 listener）；若失败处理再次抛错，`prompt()` 以该错误 reject，`finishRun` 仍会执行（`agent.ts:517-540,542-558`）。
+- 低层 `agentLoop` 的 `.then` 没有 `.catch`（`agent-loop.ts:56-67`）：sink/loop 抛错时返回的 EventStream 不会 `end`，消费者会永久等待。Kotlin 移植建议在流上以异常完成（见 8.10）。
+- JS `Set` 的 `for..of` 会访问迭代期间新增的元素；Agent 没有快照 listeners。Kotlin 若用 `LinkedHashSet` 直接迭代会 CME，建议快照（允许偏差，无测试覆盖）。
+
+## 4. agent-loop.ts 状态机
+
+### 4.1 入口与数据流
+
+- `agentLoop`（`agent-loop.ts:47-70`）：`createAgentStream()` 创建 `EventStream<AgentEvent, AgentMessage[]>`（完成条件 `agent_end`，结果取 `agent_end.messages`，`162-167`）；立即启动 `runAgentLoop`，sink 只做 `stream.push`；promise settle 后 `stream.end(messages)`；返回流。
+- `agentLoopContinue`（`80-109`）：先同步校验 `context.messages.length > 0` 且最后一条 role 不是 `assistant`，否则同步 throw（`86-92`）；之后与 `agentLoop` 相同。
+- `runAgentLoop`（`111-135`）：`initialMessages = declareToolChanges(context, prompts)`；`newMessages = [...initialMessages]`；`currentContext = {...context, messages: [...context.messages, ...initialMessages]}`（新数组）；发 `agent_start`、`turn_start`，再为每条 initialMessages 发 start/end；进入 `runLoop`；返回 `newMessages`。
+- `runAgentLoopContinue`（`137-160`）：同样校验；`newMessages = []`；`currentContext = {...context}`——注意这里没有复制 `messages` 数组，循环会直接 push 调用方传入的数组；发 `agent_start`、`turn_start`（不发消息事件）；进入 `runLoop`。
+- `streamFn ?? getDefaultStreamFn()` 在调用 `runLoop` 前解析（`133`、`158`），因此全局默认函数是在 run 开始时取值的。
+
+### 4.2 `runLoop` 的完整控制流（`agent-loop.ts:169-330`）
+
+```text
+currentContext = initialContext; config = initialConfig
+lastCompletedTurn = undefined; explicitContinuation = false
+pendingMessages = await getSteeringMessages?.() || []        # 轮询点 1：运行起点
+
+while (true) {                                               # 外层：follow-up 复活
+  hasMoreToolCalls = true
+  while (hasMoreToolCalls || pendingMessages.length > 0) {   # 内层：工具/steering 驱动
+    preparedMessages = []
+    if (lastCompletedTurn) {                                  # 非第一轮
+      snapshot = await prepareNextTurn?.(lastCompletedTurn)
+      if (snapshot) { 合并 context/messages/model/reasoning }
+      if (pendingMessages.length === 0)                       # 轮询点 2
+        pendingMessages = await getSteeringMessages?.() || []
+      await emit(turn_start)
+    }
+    for (m of declareToolChanges(currentContext, [...preparedMessages, ...pendingMessages]))
+      { await emit(message_start); await emit(message_end); context.messages.push(m); newMessages.push(m) }
+    pendingMessages = []
+    requestUpdate = await prepareRequest?.({context, model, thinkingLevel: config.reasoning ?? "off"}, signal)
+    if (requestUpdate) { 合并 context/model/reasoning }
+    assistant = await streamAssistantResponse(currentContext, config, signal, emit, streamFunction)
+    newMessages.push(assistant)
+    if (assistant.stopReason === "error" || assistant.stopReason === "aborted") {
+      lastCompletedTurn = {message: assistant, toolResults: [], context: currentContext, newMessages}
+      await finishTurn?.(lastCompletedTurn, signal)
+      await emit(turn_end, toolResults: [])
+      await emit(agent_end, messages: newMessages)
+      return
+    }
+    toolCalls = assistant.content.filter(type === "toolCall")
+    toolResults = []; hasMoreToolCalls = false
+    if (toolCalls.length > 0) {
+      batch = stopReason === "length" ? failToolCallsFromTruncatedMessage(...)
+                                      : executeToolCalls(...)
+      toolResults.push(...batch.messages)
+      hasMoreToolCalls = !batch.terminate
+      for (r of toolResults) { context.messages.push(r); newMessages.push(r) }
+    }
+    lastCompletedTurn = {message: assistant, toolResults, context: currentContext, newMessages}
+    decision = await finishTurn?.(lastCompletedTurn, signal)  # 轮询点：finishTurn
+    await emit(turn_end, message: assistant, toolResults)
+    if (decision?.action === "end") { await emit(agent_end); return }
+    explicitContinuation = decision?.action === "continue"
+    pendingMessages = await getSteeringMessages?.() || []      # 轮询点 3
+    if (hasMoreToolCalls || pendingMessages.length > 0) explicitContinuation = false
+  }
+  followUpMessages = await getFollowUpMessages?.() || []       # 轮询点 4：自然停止处
+  if (followUpMessages.length > 0) { explicitContinuation = false; pendingMessages = followUpMessages; continue }
+  if (explicitContinuation) { explicitContinuation = false; continue }  # 额外一次 context-only 请求
+  break
+}
+await emit(agent_end, messages: newMessages)
+```
+
+要点：
+
+- 第一轮不调用 `prepareNextTurn`（`lastCompletedTurn` 为空）；后续每轮在 `turn_start` 前调用（`agent-loop.ts:194-217`）。
+- `prepareNextTurn` 返回的 `messages` 与 steering 的 pending 消息拼在一起，先 `declareToolChanges` 再逐条发 start/end 并同时写入 `currentContext.messages` 与 `newMessages`（`220-225`）。顺序：prepared 在前，pending 在后。
+- 模型/推理级别的合并规则：`model: new ?? config.model`；`thinkingLevel === undefined` 保留 `config.reasoning`，`"off"` 变为 `undefined`，否则取新值（`199-208`、`236-248`）。
+- `prepareRequest` 在 pending 消息事件之后、请求之前调用；返回的 context/model/thinkingLevel 会持久替换 `currentContext`/`config`，影响本次 run 后续请求（`228-248`）。
+- `error`/`aborted` 是硬退出：先 `finishTurn`，再 `turn_end`，再 `agent_end`；不轮询队列，忽略 finishTurn 决策（`254-265`）。
+- `stopReason === "length"`：所有 tool call 一律失败不执行（`276-279`、`481-513`）。
+- 工具批 `terminate=true` 只影响 `hasMoreToolCalls`；steering/follow-up/explicit continuation 仍可让循环继续（`281`、`304-307`、`310-323`）。
+- `explicitContinuation` 是 finishTurn 的 continue 决策：若工具结果、steering、follow-up 已自然提供了下一次请求，则置 false；否则外层再来一轮，内层以 `hasMoreToolCalls=true` 进入，做一次 context-only 请求（测试 `test/agent-loop.test.ts:1273-1305`）。
+- 该 context-only 轮次会再次调用 `prepareNextTurn`（`lastCompletedTurn` 没清空），这是可观察的调用计数细节，移植需保留（见 8.9 B17）。
+- `agent_end` 只在三处发出：硬退出（`263`）、finishTurn end（`299`）、正常自然停止（`329`）。
+
+### 4.3 `declareToolChanges`（`agent-loop.ts:332-384`）
+
+目的：`context.tools` 是“可执行集合”，转录里的 system 消息声明“模型可见集合”；二者不一致时，在本次请求前用一条 system 消息向模型宣告增删。算法：
+
+1. 在 `pendingMessages` 中从后往前找最后一条 `role === "system"` 的消息（`342-350`）。
+2. 若有 pending system 消息，构造 `baseline`：把它复制并把 `toolsAdded`/`toolsRemoved` 清空（`withToolChanges(pending, NO_CHANGES)`），其余消息原样；否则 `baseline = pendingMessages`（`351-355`）。
+3. `changes = getToolStateChanges(getCurrentTools([...context.messages, ...baseline]), (context.tools ?? []).map(toToolDeclaration))`（`356-359`）。即“已提交转录 + 去掉工具字段的 pending 消息”作为旧状态，与可执行集合比较。
+4. `unchanged = 两个列表都空`（`360`）。
+5. 若存在 pending system 消息（`362-366`）：
+   - 若 unchanged 且该消息本来也没有工具字段 → 原样返回 `pendingMessages`（保留调用方对象）。
+   - 否则返回 `baseline` 的映射，把该位置替换为 `withToolChanges(pending, changes)`——内容/sections 保留，工具字段用重算的差量覆盖。
+6. 若无 pending system 消息（`367-371`）：
+   - unchanged → 原样返回；
+   - 否则新建 `{role:"system", content:"", timestamp: Date.now(), toolsAdded?, toolsRemoved?}`，插入到第一条非 system 消息之前（全 system 则追加到末尾）。
+7. `withToolChanges`（`376-384`）：复制消息、删旧工具字段、只添加非空列表。
+8. `NO_CHANGES = {toolsAdded: [], toolsRemoved: []}`（`374`）。
+
+推论（测试固定）：
+
+- 可执行集合优先于调用方 pending 消息里声明的意图（`test/agent.test.ts:247-280`）。
+- pending system 消息里已有的 content/sections 保留，delta 合并进去（`test/agent.test.ts:212-245`）。
+- 合成消息的 `toolsAdded` 是剥离后的声明（无 `execute`/`label` 等，`toToolDeclaration` 只留 name/description/parameters/constrainedSampling；`test/agent.test.ts:199-210`）。
+- 该函数在入口（prompts）与每轮 pending 消息处理中各调用一次；发出的 system 消息会进入转录，因此后续重放自然包含它。
+
+### 4.4 工具执行（`agent-loop.ts:515-959`）
+
+策略选择（`518-533`）：
+
+```text
+toolCalls = assistantMessage.content 中 type==="toolCall" 的块
+hasSequentialToolCall = 任一 toolCall 对应 currentContext.tools 中 executionMode === "sequential"
+if (config.toolExecution === "sequential" || hasSequentialToolCall) → 串行
+else → 并行
+```
+
+串行（`540-594`），逐 call：
+
+1. `emit(tool_execution_start{toolCallId, toolName, args: toolCall.arguments})` —— args 是原始参数，未经 prepare/校验。
+2. `prepareToolCall(...)`（见下）→ immediate 或 prepared。
+3. immediate：直接作为 finalized。
+4. prepared：`executePreparedToolCall`（执行，收集 onUpdate）→ `finalizeExecutedToolCall`（afterToolCall 合并）。
+5. `emit(tool_execution_end)`；`createToolResultMessage`；`emit(message_start)`；`emit(message_end)`；收集 finalized/message。
+6. 每次 call 之后检查 `signal?.aborted`，aborted 则 break；**剩余 call 完全没有任何事件与结果**。
+
+并行（`596-670`），两阶段：
+
+1. 预检阶段（串行）：逐 call `emit(tool_execution_start)` → `prepareToolCall`。
+   - immediate：立即 `emit(tool_execution_end)`，finalized 入列；若 aborted 则 break。
+   - prepared：把一个惰性 thunk 入列（不执行）；若 aborted 则 break。
+2. 执行阶段：`Promise.all(entries.map(entry => typeof entry === "function" ? entry() : Promise.resolve(entry)))`——所有 thunk 同时在微任务中启动（并发）。每个 thunk 开头若 `signal.aborted` 则产出 `Operation aborted` 错误结果并 `tool_execution_end` 后返回；否则执行+finalize+`tool_execution_end`。
+3. 收尾阶段：按 `Promise.all` 的结果顺序（= assistant 源顺序）逐条 `createToolResultMessage` → `emit(message_start)` → `emit(message_end)`，并收集为 `messages`。
+4. `terminate = shouldTerminateToolBatch(orderedFinalizedCalls)`，即 finalized 数量 >0 且每个 `result.terminate === true`（`700-702`）。
+
+因此并行模式的可观察顺序：`tool_execution_start` 按源顺序（preflight 期间），`tool_execution_end` 按完成顺序，toolResult 消息按源顺序，`turn_end.toolResults` 也按源顺序（测试 `test/agent-loop.test.ts:668-760` 断言 end 顺序 `["tool-2","tool-1"]`，消息顺序 `["tool-1","tool-2"]`）。
+
+`prepareToolCall`（`718-787`）精确步骤：
+
+1. 按 name 在 `currentContext.tools` 找工具；找不到 → immediate error `Tool ${name} not found`，`isError: true`（`726-733`）——仍然已经发过 start，随后发 end，不进入 hook。
+2. try：
+   a. `prepareArguments`（若存在）生成 `preparedToolCall`；若返回同一引用则沿用原 toolCall，否则用新 arguments 覆盖（`704-716`）。
+   b. `validateToolArguments(tool, preparedToolCall)` → `validatedArgs`；抛错走 catch。
+   c. 若配置 `beforeToolCall`：await 调用，context 为 `{assistantMessage, toolCall: 原 toolCall, args: validatedArgs, context}`（注意不是 prepared 后的 toolCall），signal 透传。
+   d. hook 返回后若 `signal.aborted` → immediate `Operation aborted`（abort 优先于 block，`748-754`）。
+   e. 若 `beforeResult.block` → 错误结果文本 `reason || "Tool execution was blocked"`；若 `terminate === true` 则把 terminate 写到结果上（`755-765`）。
+3. hook 之后再次检查 aborted → `Operation aborted`（`767-773`）。
+4. 返回 prepared `{toolCall: preparedToolCall, tool, args: validatedArgs}`（`774-779`）。
+5. catch（prepareArguments 抛错、校验失败、beforeToolCall 抛错）→ immediate error，文本 `error instanceof Error ? error.message : String(error)`，`isError: true`（`780-786`）。因此 hook/校验异常表现为错误工具结果而非 run 失败。
+6. 被 `block` 的调用不会执行 `afterToolCall`，也不测量 duration（测试 `test/agent-loop.test.ts:2167-2212` 的 hookCalls 断言）。
+7. `beforeToolCall` 可以原地改 `args`，之后**不会重新校验**，execute 直接拿到改后的对象（测试 `test/agent-loop.test.ts:528-587`）。
+
+`executePreparedToolCall`（`831-867`）：
+
+- `startedAt = performance.now()`；`acceptingUpdates = true`；onUpdate 回调把 `Promise.resolve(onUpdate(partialResult))` 收进 `updateEvents`；settle 后 `acceptingUpdates = false` 并 `await Promise.all(updateEvents)`。
+- 成功：`{result, isError: result.isError === true, durationMs: round(now-startedAt)}`。
+- 异常：错误结果（异常 message），`isError: true`，仍带 `durationMs`；仍会等待已排队的 update。
+- `finally` 再置 `acceptingUpdates = false`。工具 settle 后的 `onUpdate` 调用被静默忽略（测试 `test/agent.test.ts:473-612`）。
+- 若某个 update promise reject，会被同一个 catch 捕获，成功结果被替换成错误结果（TS 语义；Kotlin 需保留）。
+
+`finalizeExecutedToolCall`（`869-920`）：
+
+- 有 `afterToolCall` 时 await；合并规则（`893-907`）：
+  - `structuredContent = afterResult.structuredContent ?? (afterResult.content ? undefined : result.structuredContent)`
+  - `content/details/usage/terminate` 分别 `afterResult.x ?? result.x`
+  - `structuredContent === undefined` 时删除该字段，否则写入
+  - `isError = afterResult.isError ?? isError`
+  - 无深合并
+- afterToolCall 抛错：结果替换为错误结果，`isError = true`，`durationMs` 保留。
+- 输出 `{toolCall: prepared.toolCall, result, isError, durationMs}`。
+
+`runToolCall`（`812-829`，公共 API，供工具嵌套调用）：
+
+- 与模型发起的调用完全相同的管线（prepareArguments→validate→beforeToolCall→execute→afterToolCall），但**不发任何事件、不产生消息**。
+- 参数：`{tools, assistantMessage, context, signal?, onUpdate?, beforeToolCall?, afterToolCall?}`（`800-810`）。
+- immediate 结果返回 `{toolCall, result, isError}`（无 durationMs）；执行过的带 durationMs。
+- 不为工具失败 reject（unknown/校验失败/blocked/thrown 都是 `isError:true`）。
+- 测试见 `test/agent-loop.test.ts:2133-2234`。
+
+消息与事件构造：
+
+- `tool_execution_end`（`929-938`）：`{toolCallId, toolName, result, isError, durationMs?}`，durationMs 未定义时字段省略。
+- `toolResult` 消息（`940-954`）：`{role:"toolResult", toolCallId, toolName, content: result.content ?? [], details: result.details, usage: result.usage, isError, durationMs?, timestamp: Date.now()}`。
+- `message_start`/`message_end`（`956-959`）。
+- 错误结果 helper（`922-927`）：`{content:[{type:"text",text:message}], details:{}}`（**details 为 `{}`，不是 undefined**）。
+- 截断消息路径（`481-513`）：对每个 toolCall 发 start → 错误结果（文本含 `output token limit` 与 `Re-issue the tool call with complete arguments.`）→ end（无 durationMs）→ toolResult 消息事件；返回 `terminate:false`，循环会继续让模型重发（测试 `test/agent-loop.test.ts:456-526` 断言 execute 未执行、callIndex=2）。
+
+### 4.5 停止条件（没有 maxTurns）
+
+按优先级：
+
+1. assistant `stopReason` 为 `"error"` 或 `"aborted"`：硬退出，`finishTurn` 后直接 `turn_end`+`agent_end`（`agent-loop.ts:254-265`）。
+2. `finishTurn` 返回 `{action:"end"}`：`turn_end` 后在轮询队列/`prepareNextTurn` 之前结束（`agent-loop.ts:298-301`；测试 `test/agent-loop.test.ts:1217-1271`）。
+3. 本轮无工具调用（或整批 `terminate=true`）且无 steering、无 follow-up、无 finishTurn continue：`agent_end`（`agent-loop.ts:305-329`）。
+4. 有 follow-up：先注入再继续（follow-up 可无限续命）。
+5. `finishTurn` 返回 `{action:"continue"}` 但没有自然请求：额外做一次 context-only 请求（可无限续命，README 警告无条件 continue 会死循环）。
+6. 工具结果、steering、follow-up 任一存在即可自然满足 continue 决策，不额外请求（测试 `test/agent-loop.test.ts:1307-1402`）。
+
+没有轮数上限、没有 token 预算、没有超时；调用方若不满足停止条件会一直请求下去。
+
+## 5. agent.ts：`Agent` 类
+
+### 5.1 状态构造（`agent.ts:83-112`）
+
+1. `tools = initialState?.tools?.slice() ?? []`，`messages = initialState?.messages?.slice() ?? []`。
+2. `initialMessage = createInitialSystemMessage(initialState?.systemPrompt, tools.map(toToolDeclaration))`。
+3. 仅当 `messages[0]?.role !== "system"` 且有 initialMessage 时，把 initialMessage `unshift` 到 messages 头部。因此：若调用方自带首条 system 消息，`initialState.systemPrompt` 不再用于播种，`state.systemPrompt` 取转录重放结果。
+4. 默认值：`model = initialState?.model ?? DEFAULT_MODEL`（`{id/name/api/provider:"unknown", baseUrl:"", reasoning:false, input:[], cost:全 0, contextWindow:0, maxTokens:0}`，`agent.ts:58-69`）；`thinkingLevel = initialState?.thinkingLevel ?? "off"`；`isStreaming=false`；`streamingMessage=undefined`；`pendingToolCalls=new Set()`；`errorMessage=undefined`。
+5. `systemPrompt` 是 getter：`getCurrentSystemPrompt(messages)`（重放 content + sections + tools，`agent.ts:90-92`）。
+6. `tools`/`messages` setter 复制顶层数组；getter 返回内部数组（可被 push 修改）。
+
+### 5.2 `PendingMessageQueue`（`agent.ts:149-180`）
+
+| 方法 | `"all"` 模式 | `"one-at-a-time"` 模式 |
+|---|---|---|
+| `peek()` | 返回全部消息的浅拷贝 | 只返回最旧一条（无则 []） |
+| `drain()` | 取出全部并从队列删除 | 取出最旧一条并从队列删除 |
+| `enqueue`/`hasItems`/`clear` | 普通 append / 非空判断 / 清空 | 同左 |
+
+### 5.3 运行生命周期（`agent.ts:182-186,517-566`）
+
+`ActiveRun = {promise, resolve, abortController}`。
+
+`runWithLifecycle(executor)`：
+
+1. 若已有 activeRun → 抛 `"Agent is already processing."`。
+2. 新建 AbortController，手工构造一个可 resolve 的 promise，写入 `activeRun`。
+3. `state.isStreaming = true`；`streamingMessage = undefined`；`errorMessage = undefined`。
+4. `await executor(signal)`；异常 → `handleRunFailure(error, signal.aborted)`。
+5. `finally` → `finishRun()`：isStreaming=false、streamingMessage=undefined、pendingToolCalls 换新 Set、resolve activeRun.promise、activeRun=undefined。
+
+`handleRunFailure`（`542-558`）：合成失败 assistant：
+
+```ts
+{ role:"assistant", content:[{type:"text",text:""}],
+  api: state.model.api, provider: state.model.provider, model: state.model.id,
+  usage: EMPTY_USAGE, stopReason: aborted ? "aborted" : "error",
+  errorMessage: error.message, timestamp: Date.now() }
+```
+
+然后依次 `processEvents`：message_start、message_end、turn_end{toolResults: []}、agent_end{messages:[failureMessage]}。
+
+### 5.4 公共 API 与错误条件
+
+| 方法/属性 | 行为 | 错误/边界 |
+|---|---|---|
+| `subscribe(listener)` | 加入 Set，返回取消函数 | 无初始事件 |
+| `state` | 返回内部可变状态对象（同一引用） | — |
+| `steeringMode`/`followUpMode` get/set | 控制队列 drain 模式 | — |
+| `steer(m)`/`followUp(m)` | 入队，不立即改变 state.messages | — |
+| `clearSteeringQueue`/`clearFollowUpQueue`/`clearAllQueues` | 清空 | — |
+| `hasQueuedMessages()` | 任一队列非空 | — |
+| `peekQueuedMessages()` | steering.peek() 非空则返回；否则 followUp.peek() | 不消费 |
+| `signal` | 当前 run 的 AbortSignal 或 undefined | — |
+| `abort()` | 有 run 则 abort signal；无 run 不抛错 | `test/agent.test.ts:669-674` |
+| `waitForIdle()` | 返回当前 run 的 promise 或 resolved | run 结束后才 resolve |
+| `reset()` | 有 run 抛错；否则 messages = 重放后的 baseline（有则 `[baseline]` 否则 `[]`）；清运行态字段与两条队列 | 抛 `"Agent is already processing. Wait for completion before resetting."` |
+| `prompt(string \| AgentMessage \| AgentMessage[], images?)` | 有 run 抛错；normalize 后启动 run | 抛 `"Agent is already processing a prompt. Use steer() or followUp() to queue messages, or wait for completion."` |
+| `continue()` | 有 run 抛错；按尾巴分支（见 5.5） | `"Agent is already processing. Wait for completion before continuing."` / `"No messages to continue from"` / `"Cannot continue from message role: assistant"` |
+
+`normalizePromptInput`（`422-439`）：数组原样返回（不复制）；非 string 的单条包成 `[input]`；string 生成 `{role:"user", content:[{type:"text",text}, ...images], timestamp: Date.now()}`。
+
+### 5.5 `continue()` 分支（`agent.ts:392-420`）
+
+1. 若 `messages` 为空或全为 system → 抛 `"No messages to continue from"`，**不消费队列**（测试 `test/agent.test.ts:945-959`）。
+2. 若最后一条 role 为 `assistant`（无法直接续跑）：
+   - `steeringQueue.drain()` 非空 → `runPromptMessages(queuedSteering, {skipInitialSteeringPoll:true})`，即把 steering 当成本次 prompt 消息，且跳过 loop 起点的 steering 轮询（避免同批投递两次；`agent.ts:404-408,476-515`）。
+   - 否则 `followUpQueue.drain()` 非空 → `runPromptMessages(queuedFollowUps)`。
+   - 否则抛 `"Cannot continue from message role: assistant"`。
+3. 否则（user/toolResult/自定义角色）→ `runContinuation()`，走 `runAgentLoopContinue`：loop 起点会轮询 steering；follow-up 要等自然停止（测试 `test/agent.test.ts:981-1069`）。
+
+### 5.6 循环配置装配（`agent.ts:476-515`）
+
+- `model = state.model`；`reasoning = thinkingLevel === "off" ? undefined : thinkingLevel`（`480`）。
+- 转发：`sessionId`、`onPayload`、`onResponse`、`onProviderStreamEvent`、`transport`、`thinkingBudgets`、`maxRetryDelayMs`、`identity`、`toolExecution`、`beforeToolCall`、`afterToolCall`、`finishTurn`、`prepareRequest`、`convertToLlm`、`transformContext`、`getApiKey`。
+- `prepareNextTurn` 包装：优先 `prepareNextTurnWithContext(context, this.signal)`，否则 `prepareNextTurn(this.signal)`；传入的是**当前 activeRun 的 signal**，不是 loop 参数里的 signal（`494-502`）。
+- `getSteeringMessages`：首次调用若 `skipInitialSteeringPoll` 为 true，则返回 [] 并清标记；之后 drain steering 队列（`506-512`）。
+- `getFollowUpMessages`：drain follow-up 队列（`513`）。
+- 每次 run 都重新装配配置，因此调用方在两次 prompt 之间修改 Agent 字段会生效（测试 `test/agent.test.ts:1177-1201` 的 sessionId）。
+
+### 5.7 `processEvents` 的状态归约（`agent.ts:575-622`）
+
+状态归约先于 listener：
+
+| 事件 | 状态变化 |
+|---|---|
+| `message_start` | `streamingMessage = event.message`（任意角色，包括 user/toolResult） |
+| `message_update` | `streamingMessage = event.message` |
+| `message_end` | `streamingMessage = undefined`；`messages.push(event.message)` |
+| `tool_execution_start` | 复制 Set 并加入 toolCallId |
+| `tool_execution_end` | 复制 Set 并删除 toolCallId |
+| `turn_end` | 若 message 为 assistant 且有 errorMessage，写入 `state.errorMessage` |
+| `agent_end` | `streamingMessage = undefined` |
+
+之后取 activeRun signal；无 signal 抛 `"Agent listener invoked outside active run"`；按 `listeners` Set 顺序逐个 `await listener(event, signal)`。
+
+<!-- PART3 -->
+

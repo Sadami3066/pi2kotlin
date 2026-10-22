@@ -2,16 +2,29 @@ package dev.pi.ai
 
 import kotlinx.serialization.Serializable
 
+enum class ModelType { Chat, Image, Classifier }
+
+sealed interface AnyModel {
+    val id: String
+    val name: String
+    val api: String
+    val provider: String
+    val baseUrl: String
+    val input: List<ModelInputModality>
+    val cost: ModelCost
+    val modelType: ModelType
+}
+
 @Serializable
 data class Model(
-    val id: String,
-    val name: String,
-    val api: String,
-    val provider: String,
-    val baseUrl: String,
-    val input: List<ModelInputModality>,
+    override val id: String,
+    override val name: String,
+    override val api: String,
+    override val provider: String,
+    override val baseUrl: String,
+    override val input: List<ModelInputModality>,
     val inputLimits: ModelInputLimits? = null,
-    val cost: ModelCost,
+    override val cost: ModelCost,
     val headers: Map<String, String>? = null,
     val type: String? = null,
     val reasoning: Boolean,
@@ -22,39 +35,45 @@ data class Model(
     val samplingParams: JsonObject? = null,
     val samplingParamsByThinkingLevel: Map<String, JsonObject>? = null,
     val compat: JsonObject? = null,
-) {
+) : AnyModel {
+    override val modelType: ModelType get() = ModelType.Chat
+
     fun supportsImageInput(): Boolean = input.contains(ModelInputModality.Image)
 }
 
 @Serializable
 data class ImageModel(
-    val id: String,
-    val name: String,
-    val api: String,
-    val provider: String,
-    val baseUrl: String,
-    val input: List<ModelInputModality>,
+    override val id: String,
+    override val name: String,
+    override val api: String,
+    override val provider: String,
+    override val baseUrl: String,
+    override val input: List<ModelInputModality>,
     val inputLimits: ModelInputLimits? = null,
-    val cost: ModelCost,
+    override val cost: ModelCost,
     val headers: Map<String, String>? = null,
     val type: String = "image",
     val output: List<String>,
-)
+) : AnyModel {
+    override val modelType: ModelType get() = ModelType.Image
+}
 
 @Serializable
 data class ClassifierModel(
-    val id: String,
-    val name: String,
-    val api: String,
-    val provider: String,
-    val baseUrl: String,
-    val input: List<ModelInputModality>,
+    override val id: String,
+    override val name: String,
+    override val api: String,
+    override val provider: String,
+    override val baseUrl: String,
+    override val input: List<ModelInputModality>,
     val inputLimits: ModelInputLimits? = null,
-    val cost: ModelCost,
+    override val cost: ModelCost,
     val headers: Map<String, String>? = null,
     val type: String = "classifier",
     val contextWindow: Long,
-)
+) : AnyModel {
+    override val modelType: ModelType get() = ModelType.Classifier
+}
 
 @Serializable
 data class ModelImageResizeOptions(
@@ -76,3 +95,5 @@ data class ModelInputLimits(
     val maxRequestBytes: Long? = null,
     val images: ModelImageInputLimits? = null,
 )
+
+fun getModelType(model: AnyModel): ModelType = model.modelType
