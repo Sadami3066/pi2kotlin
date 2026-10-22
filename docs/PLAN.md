@@ -53,7 +53,7 @@ Kotlin 版 pi 是一个**现代化、轻量的 SDK**，用于开发者构建**�
 6. `openai-completions`（28 个 provider 可用；compat 28 字段全支持）
 7. faux provider + MockWebServer fixture 测试
 
-验收：`:pi-ai:jvmTest` 250 tests + `:pi-ai:testAndroidHostTest` 全绿；`./gradlew build --rerun-tasks` 三模块双 target 全绿。
+验收：pi-ai 250 JVM tests + 193 Android host tests、pi-agent 113 JVM tests + 113 Android host tests 全绿；`./gradlew clean build` 三模块双 target 全绿。
 
 ### M3 pi-ai 其余 provider
 
@@ -65,7 +65,7 @@ Kotlin 版 pi 是一个**现代化、轻量的 SDK**，用于开发者构建**�
 
 AgentMessage/AgentEvent、双层 agent loop、并行/串行工具执行、hooks、队列/中断、transport/proxy。
 
-验收：`:pi-agent:jvmTest` 112 tests 全绿（B01–B13、B15–B50 均有直接断言，B14 已实现）。
+验收：113 tests 全绿（B01–B13、B15–B50 均有直接断言，B14 已实现）；另有跨模块 e2e：Agent → pi-ai Models → faux provider 全链路测试。
 
 ### M5 pi-coding-agent SDK 层（下一步）
 
