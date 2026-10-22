@@ -86,9 +86,12 @@ AgentMessage/AgentEvent、双层 agent loop、并行/串行工具执行、hooks�
 - `UnixShellExecutor`（JVM/Android 共享源集，ProcessBuilder、超时/abort 杀进程树、尾部截断，13 tests）
 - SDK 开发者文档 `docs/SDK.md`
 
+已完成：
+- `AgentSessionRuntime.fork(entryId, summarizeAbandonedBranch = true)` 接入 branch summary
+- Maven 发布配置（`maven-publish`，`publishToMavenLocal` 产出 jvm jar/android aar/sources/pom，依赖正确）
+
 剩余：
-- AgentSessionRuntime.fork 接入 branch summary（`generateBranchSummary` 已有，待接线）
-- Android demo app + 发布配置
+- Android demo app
 - 扩展 hook 细化（custom message 持久化、input 流程）
 
 ### M3 其余 provider（进行中）

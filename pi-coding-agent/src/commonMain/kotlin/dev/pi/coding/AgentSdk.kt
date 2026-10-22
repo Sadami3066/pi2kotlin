@@ -20,6 +20,12 @@ import dev.pi.coding.prompt.ResourceLoader
 import dev.pi.coding.prompt.SystemPromptInput
 import dev.pi.coding.prompt.SystemPromptSections
 import dev.pi.coding.prompt.buildSystemPrompt
+import dev.pi.ai.CacheRetention
+import dev.pi.ai.SimpleStreamOptions
+import dev.pi.ai.StreamOptions
+import dev.pi.coding.compaction.GenerateBranchSummaryOptions
+import dev.pi.coding.compaction.collectEntriesForBranchSummary
+import dev.pi.coding.compaction.generateBranchSummary
 import dev.pi.coding.session.AgentSession
 import dev.pi.coding.session.CodingHooks
 import dev.pi.coding.session.SessionManager
@@ -209,12 +215,54 @@ class AgentSessionRuntime private constructor(
         return session
     }
 
-    suspend fun fork(entryId: String? = null): AgentSession {
-        val branched = session.sessionManager.createBranchedSession(entryId)
+    suspend fun fork(entryId: String? = null, summarizeAbandonedBranch: Boolean = true): AgentSession {
+        val source = session
+        val oldLeafId = source.sessionManager.getLeafId()
+        val targetId = entryId ?: oldLeafId
+        val branched = source.sessionManager.createBranchedSession(targetId)
+        if (summarizeAbandonedBranch && oldLeafId != null && targetId != null && oldLeafId != targetId) {
+            appendBranchSummary(branched, source, oldLeafId, targetId)
+        }
         val file = branched.sessionFile
-        session.close()
+        source.close()
         session = createAgentSession(options.copy(sessionFile = file))
         return session
+    }
+
+    private suspend fun appendBranchSummary(
+        branched: SessionManager,
+        source: AgentSession,
+        oldLeafId: String,
+        targetId: String,
+    ) {
+        val collected = collectEntriesForBranchSummary(source.sessionManager, oldLeafId, targetId)
+        if (collected.entries.isEmpty()) return
+        val model = source.model
+        val summarize = dev.pi.coding.compaction.Summarize { request ->
+            source.modelRuntime.completeSimple(
+                request.model,
+                Context(systemPrompt = request.systemPrompt, messages = request.messages),
+                SimpleStreamOptions(stream = StreamOptions(cacheRetention = CacheRetention.None)),
+                null,
+            )
+        }
+        val result = generateBranchSummary(
+            collected.entries,
+            GenerateBranchSummaryOptions(model = model),
+            summarize,
+        )
+        val summary = result.summary ?: return
+        val details = dev.pi.coding.compaction.BranchSummaryDetails(
+            readFiles = result.readFiles.orEmpty(),
+            modifiedFiles = result.modifiedFiles.orEmpty(),
+        ).toJson()
+        branched.branch(targetId)
+        branched.appendBranchSummary(
+            fromId = oldLeafId,
+            summary = summary,
+            details = details,
+            usage = result.usage,
+        )
     }
 
     override fun close() {

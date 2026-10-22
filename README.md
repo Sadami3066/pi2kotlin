@@ -43,6 +43,7 @@ try {
 ```bash
 ./gradlew build
 ./gradlew test
+./gradlew publishToMavenLocal   # 发布 dev.pi:pi-ai / pi-agent / pi-coding-agent 到 ~/.m2（jvm + android 变体）
 ```
 
 需要 JDK 21。Gradle 9.8.2（wrapper 自带）。
