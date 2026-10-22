@@ -10,13 +10,33 @@
 |---|---|---|
 | `pi-ai` | `packages/ai`（unified LLM API，27.7k 行） | 核心完成：类型/事件流/HTTP/SSE/transcript/校验/Models/openai-completions/42 provider/认证 |
 | `pi-agent` | `packages/agent`（agent runtime，2.5k 行） | 完成：事件模型/agent loop/工具执行/Agent 类/proxy |
-| `pi-coding-agent` | `packages/coding-agent`（core/SDK 层） | 下一步：会话/设置/工具/系统提示词/压缩/扩展 hook |
+| `pi-coding-agent` | `packages/coding-agent`（core/SDK 层） | 主体完成：SessionManager/Settings/模型/工具/提示词/AgentSession + createAgentSession SDK |
 
 ## 形态
 
 - Kotlin Multiplatform（`android` + `jvm`），核心逻辑在 `commonMain`
 - 只做 SDK 库，不做 CLI/交互式界面
 - 全量移植 pi-ai 的 42 个 provider
+
+## 快速上手（SDK）
+
+```kotlin
+val session = createAgentSession(
+    AgentSessionOptions(
+        cwd = "/path/to/workspace".toPath(),
+        agentDir = "/path/to/agent-dir".toPath(),
+        transport = okHttpTransport(),
+        model = "deepseek/deepseek-v4-flash",
+    ),
+)
+try {
+    session.subscribe { event -> /* 渲染流式事件 */ }
+    session.prompt("帮我看看这个目录里有什么")
+    println(session.getLastAssistantText())
+} finally {
+    session.close()
+}
+```
 
 ## 构建
 

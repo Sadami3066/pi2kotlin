@@ -67,44 +67,31 @@ AgentMessage/AgentEvent、双层 agent loop、并行/串行工具执行、hooks�
 
 验收：113 tests 全绿（B01–B13、B15–B50 均有直接断言，B14 已实现）；另有跨模块 e2e：Agent → pi-ai Models → faux provider 全链路测试。
 
-### M5 pi-coding-agent SDK 层（下一步）
+### M5 pi-coding-agent SDK 层（进行中，主体已完成）
 
-- `AgentSession`：prompt/steer/followUp/abort/订阅/状态
-- `SessionManager`：JSONL 持久化、树/分支/fork、in-memory 模式、可配置存储根
-- `SettingsManager`、`AuthStorage`（Android 可接 Keystore）、`ModelResolver`/`ModelRuntime`
-- 工具：read/write/edit/grep/find/ls（文件类，Android 沙箱可用）+ bash（可注入/可禁用）
-- 系统提示词/skills/prompt templates/context 文件、compaction
-- 扩展 hook：Kotlin 接口（工具注册、命令、输入/上下文/工具调用前后 hook），ServiceLoader 或显式注册
+已完成：
+- `SessionManager`：会话 JSONL v1-v3 读写、延迟建文件、树/分支/fork、context_edit 投影、compaction 感知重建、统计、列表/恢复（55 tests）
+- `SettingsManager` + `TrustManager` + `Migrations`：两级合并、脏字段写回、defaultTools 修饰、trust.json、commands→prompts 迁移（42 tests）
+- `ModelRuntime` / `ProviderComposer` / `ModelResolver`：models.json 自定义 provider、apiKey 解析、模型解析与 thinking 后缀（47 tests）
+- 工具：read/write/edit/ls + grep/find（纯 Kotlin 无 rg/fd 依赖）+ bash（注入 ShellExecutor）+ truncate/path/mutation queue（95 tests）
+- 提示词：SystemPrompt sections/defaults/diff、ResourceLoader（AGENTS.md/SYSTEM.md/skills/prompts）、skills XML、prompt templates（62 tests）
+- `AgentSession` + `createAgentSession` + `AgentSessionRuntime` + `CodingHooks`（lead 实现，SDK 公开 API）
+- 端到端验证：Agent → StreamFn → ModelRuntime → faux provider；会话落盘/重开恢复（SdkIntegrationTest）
 
-验收：以 `examples/sdk` 的等价 Kotlin 用例驱动，完成多轮工具调用 + 会话持久化/恢复 + 模型切换。
+验收：三模块 `./gradlew clean build` 全绿；pi-coding-agent 304 JVM tests + 304 Android host tests。
+
+剩余（M5 收尾）：
+- compaction（自动压缩阈值/切点/摘要、branch summary）与 session 级重试/overflow 恢复
+- bash 的 JVM/Android `ShellExecutor` 默认实现（ProcessBuilder，可选注入）
+- SDK 开发者文档 + Android demo app
+- AgentSession 的扩展 hook 细化（custom message 持久化、工具变更、input 流程）
+
+### M3 其余 provider（与 M5 并列）
+
+`openai-completions` 已覆盖 28 个 provider；其余 13 个 API（anthropic-messages、openai-responses、azure、google、vertex、mistral、bedrock、codex、pi-messages、images、classifiers）与 9 个 OAuth flow 待实现。
 
 ### M6 打磨与发布
 
 - API 稳定性检查、KDoc、示例工程（Android app + JVM demo）
 - Maven 发布配置（本地/私有仓库）
 - R8/体积检查、启动耗时
-
-## 技术决策记录
-
-| 决策 | 选择 | 理由 |
-|---|---|---|
-| 形态 | SDK 库，无 CLI/TUI | 用户定位：手机 agent 应用底座 |
-| 平台 | KMP：`android` + `jvm`，iOS 预留 | 移动端优先，同时保证可在 JVM 上跑测试/服务端 |
-| JSON | kotlinx.serialization；`encodeDefaults=true` + `explicitNulls=false` + `ignoreUnknownKeys=true` | 与 TS "undefined 不落盘、camelCase" 一致 |
-| 联合类型 | sealed interface + `@JsonClassDiscriminator` | 判别键 type/role 与上游一致 |
-| 事件流 | `Flow` + `Channel` + `CompletableDeferred` | 对应上游 async iterator + result |
-| 消息可变性 | AssistantMessage/内容块可变，流式共享实例 | 上游 partial 是共享 live 对象 |
-| 取消 | 显式 RunSignal 令牌，不用协程 cancel | 上游 abort 是协作式，cancel 会抛异常 |
-| HTTP | 传输接口 + OkHttp 实现（android/jvm） | KMP 下可替换；后续可加 Darwin/URLSession 实现 |
-| 文件 | okio | multiplatform、稳定、Android 友好 |
-| 模型数据 | 内置 1.3.0 目录快照，构建期生成，可替换 | 离线优先、无网络依赖 |
-| 扩展 | Kotlin hook SPI | 移动端不引入 JS/TS 运行时 |
-| 分发 | Maven 依赖（`java -jar` 不适用） | SDK 形态 |
-
-## 验收原则
-
-1. 上游测试逐条移植（行为断言，不追覆盖率）。
-2. 事件序列固定 fixture 黄金对照；条件允许时与真 pi 同请求 diff。
-3. 会话/设置/认证文件格式与 pi 一致（复用现有数据；移动端单独根目录）。
-4. 错误文本、工具输出提示语与上游字符串级一致（上层逻辑依赖）。
-5. 每个里程碑必须在 `jvm` 与 `android` target 上编译通过、测试通过。
