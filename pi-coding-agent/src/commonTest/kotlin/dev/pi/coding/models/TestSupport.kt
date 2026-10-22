@@ -26,6 +26,18 @@ internal class FakeTransport : HttpTransport {
     }
 }
 
+internal class RecordingTransport(
+    private val status: Int = 200,
+    private val body: String = "",
+) : HttpTransport {
+    val requests = mutableListOf<HttpRequest>()
+
+    override suspend fun execute(request: HttpRequest): HttpResponse {
+        requests.add(request)
+        return HttpResponse(status, mapOf("content-type" to "text/event-stream"), okio.Buffer().writeUtf8(body))
+    }
+}
+
 internal fun testModel(
     provider: String,
     id: String,
@@ -55,7 +67,7 @@ internal fun testModel(
 )
 
 internal fun newCredentialStore(fs: FileSystem, directory: String = "/agent"): CredentialStore =
-    CredentialStore(directory.toPath(), fs)
+    dev.pi.ai.auth.fileCredentialStore(directory.toPath(), fs)
 
 internal class FauxHarness(
     val handle: FauxProviderHandle,

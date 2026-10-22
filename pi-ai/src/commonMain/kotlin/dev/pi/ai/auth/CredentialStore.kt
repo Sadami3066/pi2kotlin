@@ -1,6 +1,7 @@
 package dev.pi.ai.auth
 
 import dev.pi.ai.PiJson
+import dev.pi.ai.platform.platformEnv
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -17,25 +18,55 @@ data class CredentialInfo(
     val type: String,
 )
 
-class CredentialStore(
+interface CredentialStore {
+    fun read(providerId: String): Credential?
+
+    fun readAll(): Map<String, Credential>
+
+    fun readApiKey(providerId: String): String?
+
+    fun readEnv(providerId: String): Map<String, String>?
+
+    fun list(): List<CredentialInfo>
+
+    fun keys(): List<String>
+
+    fun modify(providerId: String, transform: (Credential?) -> Credential?): Credential?
+
+    fun writeApiKey(providerId: String, key: String, env: Map<String, String>? = null)
+
+    fun write(providerId: String, credential: Credential)
+
+    fun writeRawCredential(providerId: String, credential: JsonElement)
+
+    fun delete(providerId: String)
+
+    fun readRaw(): Map<String, JsonElement>
+}
+
+class FileCredentialStore(
     val directory: Path = defaultAuthDirectory(),
     private val fileSystem: FileSystem = FileSystem.SYSTEM,
-) {
+) : CredentialStore {
     val file: Path get() = directory / AUTH_FILE_NAME
 
-    fun read(providerId: String): Credential? = readAll()[providerId]
+    override fun read(providerId: String): Credential? = readAll()[providerId]
 
-    fun readApiKey(providerId: String): String? = (read(providerId) as? ApiKeyCredential)?.key
+    override fun readAll(): Map<String, Credential> = readRaw().mapNotNull { (providerId, element) ->
+        decodeCredential(element)?.let { providerId to it }
+    }.toMap()
 
-    fun readEnv(providerId: String): Map<String, String>? = (read(providerId) as? ApiKeyCredential)?.env
+    override fun readApiKey(providerId: String): String? = (read(providerId) as? ApiKeyCredential)?.key
 
-    fun list(): List<CredentialInfo> = readRaw().map { (providerId, element) ->
+    override fun readEnv(providerId: String): Map<String, String>? = (read(providerId) as? ApiKeyCredential)?.env
+
+    override fun list(): List<CredentialInfo> = readRaw().map { (providerId, element) ->
         CredentialInfo(providerId, credentialType(element))
     }
 
-    fun keys(): List<String> = readRaw().keys.toList()
+    override fun keys(): List<String> = readRaw().keys.toList()
 
-    fun modify(providerId: String, transform: (Credential?) -> Credential?): Credential? {
+    override fun modify(providerId: String, transform: (Credential?) -> Credential?): Credential? {
         val raw = readRaw().toMutableMap()
         val current = raw[providerId]?.let(::decodeCredential)
         val next = transform(current) ?: return null
@@ -44,34 +75,30 @@ class CredentialStore(
         return next
     }
 
-    fun writeApiKey(providerId: String, key: String, env: Map<String, String>? = null) {
+    override fun writeApiKey(providerId: String, key: String, env: Map<String, String>?) {
         writeRaw(readRaw() + (providerId to encodeCredential(ApiKeyCredential(key = key, env = env))))
     }
 
-    fun write(providerId: String, credential: Credential) {
+    override fun write(providerId: String, credential: Credential) {
         writeRaw(readRaw() + (providerId to encodeCredential(credential)))
     }
 
-    fun writeRawCredential(providerId: String, credential: JsonElement) {
+    override fun writeRawCredential(providerId: String, credential: JsonElement) {
         writeRaw(readRaw() + (providerId to credential))
     }
 
-    fun delete(providerId: String) {
+    override fun delete(providerId: String) {
         val raw = readRaw()
         if (!raw.containsKey(providerId)) return
         writeRaw(raw - providerId)
     }
 
-    fun readRaw(): Map<String, JsonElement> {
+    override fun readRaw(): Map<String, JsonElement> {
         if (!fileSystem.exists(file)) return emptyMap()
         val text = fileSystem.read(file) { readUtf8() }
         if (text.isBlank()) return emptyMap()
         return PiJson.parseToJsonElement(text).jsonObject
     }
-
-    private fun readAll(): Map<String, Credential> = readRaw().mapNotNull { (providerId, element) ->
-        decodeCredential(element)?.let { providerId to it }
-    }.toMap()
 
     private fun writeRaw(raw: Map<String, JsonElement>) {
         fileSystem.createDirectories(directory)
@@ -108,7 +135,14 @@ class CredentialStore(
     }
 }
 
+fun fileCredentialStore(
+    directory: Path = defaultAuthDirectory(),
+    fileSystem: FileSystem = FileSystem.SYSTEM,
+): CredentialStore = FileCredentialStore(directory, fileSystem)
+
 fun defaultAuthDirectory(): Path {
-    val home = System.getProperty("user.home").orEmpty().ifBlank { "." }
+    val home = platformEnv("HOME")?.ifBlank { null }
+        ?: platformEnv("USERPROFILE")?.ifBlank { null }
+        ?: "."
     return home.toPath() / ".pi" / "agent"
 }

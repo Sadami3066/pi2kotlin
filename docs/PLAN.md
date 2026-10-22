@@ -115,3 +115,28 @@ AgentMessage/AgentEvent、双层 agent loop、并行/串行工具执行、hooks�
 - 示例工程：`examples/jvm-demo`（`./gradlew :examples:jvm-demo:run` 端到端跑通）、`examples/android-demo`（独立 Gradle 工程，消费发布产物，`scripts/build-android-demo.sh` 产出 debug APK）
 - SDK 使用文档 `docs/SDK.md`
 - 剩余可选：KDoc 全量、R8/体积与启动耗时测量、私有仓库发布
+
+## 最终验收（review 修复轮，0.1.0）
+
+针对外部 review 的 14 项 P1/P2 与完成度边界，本轮修复并验证：
+
+| review 项 | 修复 | 验证 |
+|---|---|---|
+| P1.1 OAuth 刷新被绕过 | pi-ai 统一认证链 `ProviderAuthResolver`/`resolveAuthForProvider`：stored OAuth → 过期 refresh → `toAuth()`；coding `ModelRuntime` 不再预填 credential | pi-ai `ProviderAuthChainTest` 9 tests（refresh 请求/写回/headers）；coding `AuthScenarioTest` 2 tests（经 SDK 端到端） |
+| P1.2 abort/waitForIdle/close 未覆盖整次操作 | 会话级 `RunSignal` 覆盖重试等待/压缩/摘要；`waitForIdle` 等待整个 prompt 操作；`close()` suspend 且等操作结束、先 shutdown hook 再退订/关会话；Runtime 提供 suspend `close()` | `SessionLifecycleScenarioTest` 3 tests（重试等待 abort 不发第二次请求、waitForIdle 覆盖重试与整次操作） |
+| P1.3 溢出恢复缺 omitFailedTurn/次数边界 | 溢出分支先 `omitFailedTurn`（context_edit）+ 重建上下文，再自动压缩一次（split-turn 允许 history + turn-prefix 两次摘要），随后 continueRun | `OverflowRecoveryScenarioTest` 2 tests；不再出现 "Cannot continue from message role: assistant" |
+| P1.4 Android 示例线程错误 | 示例：session/prompt 全部在 IO，UI 经 Channel→Main；onDestroy suspend close；新增离线 faux / 本地 mock 模式 | 真机（Xiaomi rubypro/Android 13）离线 + `adb reverse` mock + 销毁重开；logcat 0 崩溃/ANR/NetworkOnMain，StrictMode 无应用帧违规；证据 `docs/device-test/` |
+| P1.5 自定义 provider 仅 openai-completions | pi-ai `chatApiFactory` 覆盖全部 10 种 chat API；`ProviderComposer` 接入 | `ProtocolFactoriesTest` 10 API；coding 自定义 provider 真实请求到 anthropic/openai-responses 端点 |
+| P1.6 Cloudflare 未适配 | 新增 `CloudflareStream`/`CloudflareAuth`：URL 占位符替换、workers-ai Bearer、ai-gateway `cf-aig-authorization`（gateway token 优先） | `CloudflareProvidersTest` 7 tests（MockWebServer URL/headers） |
+| P1.7 defaultTools 未生效 | `createAgentSession` 用 `settings.getDefaultTools()` 过滤默认工具集 | `SessionConfigScenarioTest`（defaultTools/加减修饰） |
+| P1.8 静态 extra sections 首次 prompt 丢失 | `AgentSession` 保存 `staticSystemPromptSections` 并参与每次 sections 计算 | `SessionConfigScenarioTest` 首请求可见 |
+| P2.9 系统消息未持久化 | 初始 system 快照与 patch 均落 JSONL；恢复会话时从历史 system 消息重放 sections 基线 | `SessionContextScenarioTest`（JSONL system 条目/重开一致） |
+| P2.10 模型/thinking 语义丢失 | 显式 `options.model` 优先；`:thinking` 后缀与 `modelThinking`/默认 thinking 参与解析 | `SessionConfigScenarioTest` |
+| P2.11 事件订阅可能丢事件 | `MutableSharedFlow(SUSPEND, buffer=256)` + suspend `emit`；`subscribe` 用 `UNDISPATCHED` 立即收集 | `SessionContextScenarioTest` 仅经 `session.events` 校验完整序列 |
+| P2.12 grep/find 忽略语义 | 新增 `GitIgnoreMatcher`（嵌套/取反/目录/锚定/通配）；流式 limit 早停 + RunSignal 取消 | 44 tests（工具 + matcher + 早停/取消） |
+| P2.13 校验子集 | 补齐数字/字符串/数组约束、本地 `$ref`/`$defs`、21 个 format；错误文本 TypeBox 1.3.27 golden 逐字对照 | ValidationTest 35 tests（60 golden 断言） |
+| P2.14 PKCE 随机源 | `oauthRandomBytes` 默认 `platformSecureRandomBytes`（java.security.SecureRandom） | PkceTest + PlatformAbstractionTest |
+| 平台泄漏 | 平台差异收敛 `dev.pi.ai.platform`（time/random/env/atomic）；commonMain 无 `java.*` import | grep 校验 + `PlatformAbstractionTest` |
+| 发布不一致 | 版本统一 `0.1.0`；`jvmToolchain(17)` 产物 class major=61；双语 README、LICENSE、RELEASE 文档 | `scripts/verify-release.mjs` 32/32 PASS；`scripts/release-local.sh` 全流程通过 |
+
+测试不足项同步补齐：固定 JSONL/协议 fixture（TS 格式手写，默认可运行）、真实数据扫描改 `PI2K_REAL_SESSIONS_DIR` opt-in、SDK 组合场景 18 tests。

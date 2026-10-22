@@ -51,27 +51,31 @@ fun findTool(cwd: Path, fs: FileSystem): CodingTool = CodingTool(
         val matcher = buildFileGlobMatcher(pattern)
 
         val results = mutableListOf<String>()
-        var resultLimitReached = false
+        val collectFile: suspend (Path) -> Boolean = { file ->
+            val relative = toolRelativePath(searchPath, file).orEmpty().ifEmpty { file.name }
+            if (matcher(relative)) {
+                results += relative
+                results.size < limit
+            } else {
+                true
+            }
+        }
 
         if (searchMetadata.isDirectory) {
-            files@ for (file in walkToolFiles(fs, searchPath)) {
-                signal?.throwIfAborted()
-                val relative = toolRelativePath(searchPath, file).orEmpty().ifEmpty { file.name }
-                if (!matcher(relative)) {
-                    continue@files
-                }
-                results += relative
-                if (results.size >= limit) {
-                    resultLimitReached = true
-                    break@files
-                }
-            }
+            walkToolFilesStreaming(
+                fs = fs,
+                root = searchPath,
+                hierarchy = GitIgnoreHierarchy(fs, searchPath),
+                signal = signal,
+                filter = null,
+            ) { file -> collectFile(file) }
         } else {
             if (matcher(searchPath.name)) {
                 results += searchPath.name
             }
         }
 
+        val resultLimitReached = results.size >= limit
         if (results.isEmpty()) {
             textResult("No files found matching pattern")
         } else {

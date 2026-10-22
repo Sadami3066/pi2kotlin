@@ -1,5 +1,6 @@
 package dev.pi.ai.api
 
+import dev.pi.ai.platform.platformCurrentTimeMillis
 import dev.pi.ai.ClassifierAnswer
 import dev.pi.ai.ClassifierBoolAnswer
 import dev.pi.ai.ClassifierBoolQuestion
@@ -34,7 +35,7 @@ class OpenAiDecisionsApi(internal val transport: HttpTransport) : ClassifierApiP
         context: ClassifierContext,
         options: ClassifierOptions,
     ): ClassifierResult {
-        val timestamp = System.currentTimeMillis()
+        val timestamp = platformCurrentTimeMillis()
         var usage: Usage? = null
         try {
             if (model.api != "openai-decisions") throw IllegalStateException("Unsupported classifier API: ${model.api}")

@@ -554,4 +554,1229 @@ class ValidationTest {
             validateToolArguments(tool, call(arguments = """{"anything":[1,2,{"x":null}]}""")),
         )
     }
+
+    private data class GoldenCase(
+        val name: String,
+        val parameters: String,
+        val arguments: String,
+        val expectedResult: String?,
+        val expectedError: String?,
+    )
+
+    private fun goldenCases(): List<GoldenCase> = listOf(
+        GoldenCase(
+            "minimum",
+            """
+                {"type":"object","properties":{"value":{"type":"number","minimum":5}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":3}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must be >= 5
+
+                Received arguments:
+                {
+                  "value": 3
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "minimum int",
+            """
+                {"type":"object","properties":{"value":{"type":"integer","minimum":1}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":0}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must be >= 1
+
+                Received arguments:
+                {
+                  "value": 0
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "minimum float",
+            """
+                {"type":"object","properties":{"value":{"type":"number","minimum":1.5}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":1.25}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must be >= 1.5
+
+                Received arguments:
+                {
+                  "value": 1.25
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "maximum",
+            """
+                {"type":"object","properties":{"value":{"type":"number","maximum":5}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":6}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must be <= 5
+
+                Received arguments:
+                {
+                  "value": 6
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "exclusiveMinimum",
+            """
+                {"type":"object","properties":{"value":{"type":"number","exclusiveMinimum":5}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":5}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must be > 5
+
+                Received arguments:
+                {
+                  "value": 5
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "exclusiveMaximum",
+            """
+                {"type":"object","properties":{"value":{"type":"number","exclusiveMaximum":5.5}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":5.5}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must be < 5.5
+
+                Received arguments:
+                {
+                  "value": 5.5
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "multipleOf",
+            """
+                {"type":"object","properties":{"value":{"type":"number","multipleOf":2}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":3}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must be multiple of 2
+
+                Received arguments:
+                {
+                  "value": 3
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "multipleOf decimal",
+            """
+                {"type":"object","properties":{"value":{"type":"number","multipleOf":0.1}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":1.25}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must be multiple of 0.1
+
+                Received arguments:
+                {
+                  "value": 1.25
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "multipleOf zero",
+            """
+                {"type":"object","properties":{"value":{"type":"number","multipleOf":0}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":5}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must be multiple of 0
+
+                Received arguments:
+                {
+                  "value": 5
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "multipleOf pass",
+            """
+                {"type":"object","properties":{"value":{"type":"number","multipleOf":0.01}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":19.99}
+                """.trimIndent(),
+            """
+                {"value":19.99}
+                """.trimIndent(),
+            null,
+        ),
+        GoldenCase(
+            "minLength",
+            """
+                {"type":"object","properties":{"value":{"type":"string","minLength":3}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"ab"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must not have fewer than 3 characters
+
+                Received arguments:
+                {
+                  "value": "ab"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "maxLength",
+            """
+                {"type":"object","properties":{"value":{"type":"string","maxLength":3}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"abcd"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must not have more than 3 characters
+
+                Received arguments:
+                {
+                  "value": "abcd"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "minLength grapheme emoji",
+            """
+                {"type":"object","properties":{"value":{"type":"string","minLength":2}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"😀"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must not have fewer than 2 characters
+
+                Received arguments:
+                {
+                  "value": "😀"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "maxLength grapheme family pass",
+            """
+                {"type":"object","properties":{"value":{"type":"string","maxLength":1}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"👨‍👩‍👧‍👦"}
+                """.trimIndent(),
+            """
+                {"value":"👨‍👩‍👧‍👦"}
+                """.trimIndent(),
+            null,
+        ),
+        GoldenCase(
+            "maxLength grapheme flag pass",
+            """
+                {"type":"object","properties":{"value":{"type":"string","maxLength":1}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"🇨🇳"}
+                """.trimIndent(),
+            """
+                {"value":"🇨🇳"}
+                """.trimIndent(),
+            null,
+        ),
+        GoldenCase(
+            "maxLength grapheme combining pass",
+            """
+                {"type":"object","properties":{"value":{"type":"string","maxLength":1}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"é"}
+                """.trimIndent(),
+            """
+                {"value":"é"}
+                """.trimIndent(),
+            null,
+        ),
+        GoldenCase(
+            "pattern",
+            """
+                {"type":"object","properties":{"value":{"type":"string","pattern":"^a"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"b"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must match pattern "^a"
+
+                Received arguments:
+                {
+                  "value": "b"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "pattern unicode fail",
+            """
+                {"type":"object","properties":{"value":{"type":"string","pattern":"^\\p{L}+${'$'}"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"a1"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must match pattern "^\p{L}+${'$'}"
+
+                Received arguments:
+                {
+                  "value": "a1"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "pattern unicode pass",
+            """
+                {"type":"object","properties":{"value":{"type":"string","pattern":"^\\p{L}+${'$'}"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"abc"}
+                """.trimIndent(),
+            """
+                {"value":"abc"}
+                """.trimIndent(),
+            null,
+        ),
+        GoldenCase(
+            "format uuid fail",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"uuid"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"not-a-uuid"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must match format "uuid"
+
+                Received arguments:
+                {
+                  "value": "not-a-uuid"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "format uuid pass",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"uuid"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"123e4567-e89b-12d3-a456-426614174000"}
+                """.trimIndent(),
+            """
+                {"value":"123e4567-e89b-12d3-a456-426614174000"}
+                """.trimIndent(),
+            null,
+        ),
+        GoldenCase(
+            "format email fail",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"email"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"nope"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must match format "email"
+
+                Received arguments:
+                {
+                  "value": "nope"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "format email pass",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"email"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"a.b+c@example.co.uk"}
+                """.trimIndent(),
+            """
+                {"value":"a.b+c@example.co.uk"}
+                """.trimIndent(),
+            null,
+        ),
+        GoldenCase(
+            "format ipv4 fail",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"ipv4"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"999.1.1.1"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must match format "ipv4"
+
+                Received arguments:
+                {
+                  "value": "999.1.1.1"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "format ipv6 fail",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"ipv6"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"1::2::3"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must match format "ipv6"
+
+                Received arguments:
+                {
+                  "value": "1::2::3"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "format date fail",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"date"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"2021-02-29"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must match format "date"
+
+                Received arguments:
+                {
+                  "value": "2021-02-29"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "format time fail",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"time"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"23:59:59"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must match format "time"
+
+                Received arguments:
+                {
+                  "value": "23:59:59"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "format date-time fail",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"date-time"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"2020-12-12"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must match format "date-time"
+
+                Received arguments:
+                {
+                  "value": "2020-12-12"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "format hostname fail",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"hostname"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"-bad-"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must match format "hostname"
+
+                Received arguments:
+                {
+                  "value": "-bad-"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "format hostname trailing dot fail",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"hostname"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"example.com."}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must match format "hostname"
+
+                Received arguments:
+                {
+                  "value": "example.com."
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "format json-pointer fail",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"json-pointer"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"abc"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must match format "json-pointer"
+
+                Received arguments:
+                {
+                  "value": "abc"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "format uri fail",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"uri"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"not a uri"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must match format "uri"
+
+                Received arguments:
+                {
+                  "value": "not a uri"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "format regex fail",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"regex"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"["}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must match format "regex"
+
+                Received arguments:
+                {
+                  "value": "["
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "format duration fail",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"duration"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"P1D2H"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must match format "duration"
+
+                Received arguments:
+                {
+                  "value": "P1D2H"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "format uri-template fail",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"uri-template"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"/users/{id"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must match format "uri-template"
+
+                Received arguments:
+                {
+                  "value": "/users/{id"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "format unknown pass",
+            """
+                {"type":"object","properties":{"value":{"type":"string","format":"made-up"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"whatever"}
+                """.trimIndent(),
+            """
+                {"value":"whatever"}
+                """.trimIndent(),
+            null,
+        ),
+        GoldenCase(
+            "string ordering",
+            """
+                {"type":"object","properties":{"value":{"type":"string","maxLength":2,"minLength":5,"format":"uuid","pattern":"^z"}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":"abc"}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must not have more than 2 characters
+                  - value: must not have fewer than 5 characters
+                  - value: must match format "uuid"
+                  - value: must match pattern "^z"
+
+                Received arguments:
+                {
+                  "value": "abc"
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "number ordering",
+            """
+                {"type":"object","properties":{"value":{"type":"number","exclusiveMaximum":1,"exclusiveMinimum":10,"maximum":2,"minimum":9,"multipleOf":3}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":5}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must be < 1
+                  - value: must be > 10
+                  - value: must be <= 2
+                  - value: must be >= 9
+                  - value: must be multiple of 3
+
+                Received arguments:
+                {
+                  "value": 5
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "array minItems",
+            """
+                {"type":"object","properties":{"value":{"type":"array","minItems":2}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":[1]}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must not have fewer than 2 items
+
+                Received arguments:
+                {
+                  "value": [
+                    1
+                  ]
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "array maxItems",
+            """
+                {"type":"object","properties":{"value":{"type":"array","maxItems":1}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":[1,2]}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must not have more than 1 items
+
+                Received arguments:
+                {
+                  "value": [
+                    1,
+                    2
+                  ]
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "array uniqueItems numbers",
+            """
+                {"type":"object","properties":{"value":{"type":"array","uniqueItems":true}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":[1,2,1,1]}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must not have duplicate items
+
+                Received arguments:
+                {
+                  "value": [
+                    1,
+                    2,
+                    1,
+                    1
+                  ]
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "array uniqueItems 1 vs 1.0",
+            """
+                {"type":"object","properties":{"value":{"type":"array","uniqueItems":true}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":[1,1]}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must not have duplicate items
+
+                Received arguments:
+                {
+                  "value": [
+                    1,
+                    1
+                  ]
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "array uniqueItems objects",
+            """
+                {"type":"object","properties":{"value":{"type":"array","uniqueItems":true}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":[{"a":1,"b":2},{"b":2,"a":1}]}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must not have duplicate items
+
+                Received arguments:
+                {
+                  "value": [
+                    {
+                      "a": 1,
+                      "b": 2
+                    },
+                    {
+                      "b": 2,
+                      "a": 1
+                    }
+                  ]
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "array uniqueItems distinct",
+            """
+                {"type":"object","properties":{"value":{"type":"array","uniqueItems":true}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":[true,1]}
+                """.trimIndent(),
+            """
+                {"value":[true,1]}
+                """.trimIndent(),
+            null,
+        ),
+        GoldenCase(
+            "array contains",
+            """
+                {"type":"object","properties":{"value":{"type":"array","contains":{"type":"number"}}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":["a","b"]}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must contain at least 1 valid item
+
+                Received arguments:
+                {
+                  "value": [
+                    "a",
+                    "b"
+                  ]
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "array contains empty",
+            """
+                {"type":"object","properties":{"value":{"type":"array","contains":{"type":"number"}}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":[]}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must contain at least 1 valid item
+
+                Received arguments:
+                {
+                  "value": []
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "array contains pass",
+            """
+                {"type":"object","properties":{"value":{"type":"array","contains":{"type":"number"}}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":["a",1]}
+                """.trimIndent(),
+            """
+                {"value":["a",1]}
+                """.trimIndent(),
+            null,
+        ),
+        GoldenCase(
+            "array ordering",
+            """
+                {"type":"object","properties":{"value":{"type":"array","items":{"type":"string","pattern":"^x"},"contains":{"type":"boolean"},"maxItems":1,"minItems":3,"uniqueItems":true}},"required":["value"]}
+                """.trimIndent(),
+            """
+                {"value":["a","a"]}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must contain at least 1 valid item
+                  - value.0: must match pattern "^x"
+                  - value.1: must match pattern "^x"
+                  - value: must not have more than 1 items
+                  - value: must not have fewer than 3 items
+                  - value: must not have duplicate items
+
+                Received arguments:
+                {
+                  "value": [
+                    "a",
+                    "a"
+                  ]
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "nested property constraints",
+            """
+                {"type":"object","properties":{"outer":{"type":"object","properties":{"count":{"type":"integer","minimum":1,"maximum":3}},"required":["count"],"additionalProperties":false}},"required":["outer"]}
+                """.trimIndent(),
+            """
+                {"outer":{"count":5,"extra":true}}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - outer.extra: schema is false
+                  - outer: must not have additional properties
+                  - outer.count: must be <= 3
+
+                Received arguments:
+                {
+                  "outer": {
+                    "count": 5,
+                    "extra": true
+                  }
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "ref simple",
+            """
+                {"type":"object","properties":{"a":{"${'$'}ref":"#/${'$'}defs/positive"}},"required":["a"],"${'$'}defs":{"positive":{"type":"number","minimum":1},"text":{"type":"string","minLength":2},"pos":{"type":"number","minimum":0},"node":{"type":"object","properties":{"value":{"type":"number"},"next":{"anyOf":[{"${'$'}ref":"#/${'$'}defs/node"},{"type":"null"}]}},"required":["value"],"additionalProperties":false}}}
+                """.trimIndent(),
+            """
+                {"a":0}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - a: must be >= 1
+
+                Received arguments:
+                {
+                  "a": 0
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "ref nested",
+            """
+                {"type":"object","properties":{"outer":{"type":"object","properties":{"inner":{"${'$'}ref":"#/${'$'}defs/positive"}},"required":["inner"]}},"required":["outer"],"${'$'}defs":{"positive":{"type":"number","minimum":1},"text":{"type":"string","minLength":2},"pos":{"type":"number","minimum":0},"node":{"type":"object","properties":{"value":{"type":"number"},"next":{"anyOf":[{"${'$'}ref":"#/${'$'}defs/node"},{"type":"null"}]}},"required":["value"],"additionalProperties":false}}}
+                """.trimIndent(),
+            """
+                {"outer":{"inner":-1}}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - outer.inner: must be >= 1
+
+                Received arguments:
+                {
+                  "outer": {
+                    "inner": -1
+                  }
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "ref definitions",
+            """
+                {"type":"object","properties":{"a":{"${'$'}ref":"#/definitions/text"}},"required":["a"],"${'$'}defs":{"positive":{"type":"number","minimum":1},"text":{"type":"string","minLength":2},"pos":{"type":"number","minimum":0},"node":{"type":"object","properties":{"value":{"type":"number"},"next":{"anyOf":[{"${'$'}ref":"#/${'$'}defs/node"},{"type":"null"}]}},"required":["value"],"additionalProperties":false}},"definitions":{"text":{"type":"string"}}}
+                """.trimIndent(),
+            """
+                {"a":5}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - a: must be string
+
+                Received arguments:
+                {
+                  "a": 5
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "ref property pointer",
+            """
+                {"type":"object","properties":{"a":{"${'$'}ref":"#/properties/b"},"b":{"type":"string"}},"required":["a"],"${'$'}defs":{"positive":{"type":"number","minimum":1},"text":{"type":"string","minLength":2},"pos":{"type":"number","minimum":0},"node":{"type":"object","properties":{"value":{"type":"number"},"next":{"anyOf":[{"${'$'}ref":"#/${'$'}defs/node"},{"type":"null"}]}},"required":["value"],"additionalProperties":false}}}
+                """.trimIndent(),
+            """
+                {"a":5}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - a: must be string
+
+                Received arguments:
+                {
+                  "a": 5
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "ref sibling keywords",
+            """
+                {"type":"object","properties":{"a":{"${'$'}ref":"#/${'$'}defs/pos","maximum":10}},"required":["a"],"${'$'}defs":{"positive":{"type":"number","minimum":1},"text":{"type":"string","minLength":2},"pos":{"type":"number","minimum":0},"node":{"type":"object","properties":{"value":{"type":"number"},"next":{"anyOf":[{"${'$'}ref":"#/${'$'}defs/node"},{"type":"null"}]}},"required":["value"],"additionalProperties":false}}}
+                """.trimIndent(),
+            """
+                {"a":20}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - a: must be <= 10
+
+                Received arguments:
+                {
+                  "a": 20
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "ref items",
+            """
+                {"type":"object","properties":{"value":{"type":"array","items":{"${'$'}ref":"#/${'$'}defs/text"}}},"required":["value"],"${'$'}defs":{"positive":{"type":"number","minimum":1},"text":{"type":"string","minLength":2},"pos":{"type":"number","minimum":0},"node":{"type":"object","properties":{"value":{"type":"number"},"next":{"anyOf":[{"${'$'}ref":"#/${'$'}defs/node"},{"type":"null"}]}},"required":["value"],"additionalProperties":false}}}
+                """.trimIndent(),
+            """
+                {"value":["a","bcd"]}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value.0: must not have fewer than 2 characters
+
+                Received arguments:
+                {
+                  "value": [
+                    "a",
+                    "bcd"
+                  ]
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "ref anyOf branch",
+            """
+                {"type":"object","properties":{"value":{"anyOf":[{"${'$'}ref":"#/${'$'}defs/text"},{"${'$'}ref":"#/${'$'}defs/pos"}]}},"required":["value"],"${'$'}defs":{"positive":{"type":"number","minimum":1},"text":{"type":"string","minLength":2},"pos":{"type":"number","minimum":0},"node":{"type":"object","properties":{"value":{"type":"number"},"next":{"anyOf":[{"${'$'}ref":"#/${'$'}defs/node"},{"type":"null"}]}},"required":["value"],"additionalProperties":false}}}
+                """.trimIndent(),
+            """
+                {"value":true}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - value: must be string
+                  - value: must be number
+                  - value: must match a schema in anyOf
+
+                Received arguments:
+                {
+                  "value": true
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "ref missing target",
+            """
+                {"type":"object","properties":{"a":{"${'$'}ref":"#/${'$'}defs/missing"}},"required":["a"],"${'$'}defs":{"positive":{"type":"number","minimum":1},"text":{"type":"string","minLength":2},"pos":{"type":"number","minimum":0},"node":{"type":"object","properties":{"value":{"type":"number"},"next":{"anyOf":[{"${'$'}ref":"#/${'$'}defs/node"},{"type":"null"}]}},"required":["value"],"additionalProperties":false}}}
+                """.trimIndent(),
+            """
+                {"a":1}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - a: schema is false
+
+                Received arguments:
+                {
+                  "a": 1
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "ref recursive pass",
+            """
+                {"type":"object","properties":{"head":{"${'$'}ref":"#/${'$'}defs/node"}},"required":["head"],"${'$'}defs":{"positive":{"type":"number","minimum":1},"text":{"type":"string","minLength":2},"pos":{"type":"number","minimum":0},"node":{"type":"object","properties":{"value":{"type":"number"},"next":{"anyOf":[{"${'$'}ref":"#/${'$'}defs/node"},{"type":"null"}]}},"required":["value"],"additionalProperties":false}}}
+                """.trimIndent(),
+            """
+                {"head":{"value":1,"next":{"value":2,"next":null}}}
+                """.trimIndent(),
+            """
+                {"head":{"value":1,"next":{"value":2,"next":null}}}
+                """.trimIndent(),
+            null,
+        ),
+        GoldenCase(
+            "ref recursive fail",
+            """
+                {"type":"object","properties":{"head":{"${'$'}ref":"#/${'$'}defs/node"}},"required":["head"],"${'$'}defs":{"positive":{"type":"number","minimum":1},"text":{"type":"string","minLength":2},"pos":{"type":"number","minimum":0},"node":{"type":"object","properties":{"value":{"type":"number"},"next":{"anyOf":[{"${'$'}ref":"#/${'$'}defs/node"},{"type":"null"}]}},"required":["value"],"additionalProperties":false}}}
+                """.trimIndent(),
+            """
+                {"head":{"value":1,"next":{"value":"bad","next":null}}}
+                """.trimIndent(),
+            null,
+            """
+                Validation failed for tool "echo":
+                  - head.next.value: must be number
+                  - head.next: must be null
+                  - head.next: must match a schema in anyOf
+
+                Received arguments:
+                {
+                  "head": {
+                    "value": 1,
+                    "next": {
+                      "value": "bad",
+                      "next": null
+                    }
+                  }
+                }
+                """.trimIndent(),
+        ),
+        GoldenCase(
+            "ref nullable union",
+            """
+                {"type":"object","properties":{"value":{"anyOf":[{"${'$'}ref":"#/${'$'}defs/text"},{"type":"null"}]}},"required":["value"],"${'$'}defs":{"positive":{"type":"number","minimum":1},"text":{"type":"string","minLength":2},"pos":{"type":"number","minimum":0},"node":{"type":"object","properties":{"value":{"type":"number"},"next":{"anyOf":[{"${'$'}ref":"#/${'$'}defs/node"},{"type":"null"}]}},"required":["value"],"additionalProperties":false}}}
+                """.trimIndent(),
+            """
+                {"value":null}
+                """.trimIndent(),
+            """
+                {"value":null}
+                """.trimIndent(),
+            null,
+        ),
+    )
+
+    @Test
+    fun matchesTypeBoxConversionGoldenMessagesForConstraintKeywords() {
+        for (case in goldenCases()) {
+            val tool = tool(case.parameters)
+            val toolCall = call(arguments = case.arguments)
+            if (case.expectedError != null) {
+                val error = assertFailsWith<ToolArgumentValidationException>(case.name) {
+                    validateToolArguments(tool, toolCall)
+                }
+                assertEquals(case.expectedError, error.message, case.name)
+            } else {
+                assertEquals(parse(case.expectedResult!!), validateToolArguments(tool, toolCall), case.name)
+            }
+        }
+    }
+    @Test
+    fun coercesBeforeApplyingConstraintKeywords() {
+        val numberTool = valueTool("""{"type":"number","minimum":5}""")
+        assertErrorMessage(
+            """
+            Validation failed for tool "echo":
+              - value: must be >= 5
+
+            Received arguments:
+            {
+              "value": "3"
+            }
+            """.trimIndent(),
+        ) {
+            validateToolArguments(numberTool, call(arguments = """{"value":"3"}"""))
+        }
+        val multipleTool = valueTool("""{"type":"number","multipleOf":2}""")
+        assertErrorMessage(
+            """
+            Validation failed for tool "echo":
+              - value: must be multiple of 2
+
+            Received arguments:
+            {
+              "value": "3"
+            }
+            """.trimIndent(),
+        ) {
+            validateToolArguments(multipleTool, call(arguments = """{"value":"3"}"""))
+        }
+    }
+
+    @Test
+    fun resolvesEscapedJsonPointerSegmentsInRefs() {
+        val tool = tool(
+            """
+            {"type":"object","properties":{"a":{"${'$'}ref":"#/${'$'}defs/a~1b"},"c":{"${'$'}ref":"#/${'$'}defs/a~0b"},"d":{"${'$'}ref":"#/${'$'}defs/a%20b"}},"${'$'}defs":{"a/b":{"type":"string"},"a~b":{"type":"string"},"a b":{"type":"string"}}}
+            """.trimIndent(),
+        )
+        val error = assertFailsWith<ToolArgumentValidationException> {
+            validateToolArguments(tool, call(arguments = """{"a":1,"c":2,"d":3}"""))
+        }
+        assertEquals(
+            listOf(
+                "  - a: must be string",
+                "  - c: must be string",
+                "  - d: must be string",
+            ).joinToString("\n"),
+            error.message!!.lines().drop(1).take(3).joinToString("\n"),
+        )
+    }
+
+    @Test
+    fun guardsAgainstRecursiveRefCycles() {
+        val tool = tool(
+            """
+            {"type":"object","properties":{"a":{"${'$'}ref":"#/${'$'}defs/a"}},"${'$'}defs":{"a":{"${'$'}ref":"#/${'$'}defs/a"}}}
+            """.trimIndent(),
+        )
+        val error = assertFailsWith<ToolArgumentValidationException> {
+            validateToolArguments(tool, call(arguments = """{"a":1}"""))
+        }
+        assertTrue(error.message!!.contains("  - a: schema is false"))
+    }
+
+    @Test
+    fun unknownFormatsAreIgnoredLikeTypeBoxRegistry() {
+        val tool = valueTool("""{"type":"string","format":"not-registered"}""")
+        assertResult("""{"value":"anything"}""", validateToolArguments(tool, call(arguments = """{"value":"anything"}""")))
+    }
 }

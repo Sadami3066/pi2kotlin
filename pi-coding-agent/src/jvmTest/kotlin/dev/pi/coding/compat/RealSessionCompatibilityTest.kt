@@ -93,14 +93,16 @@ class RealSessionCompatibilityTest {
     private val fs: FileSystem = FileSystem.SYSTEM
 
     private fun sessionsRoot(): Path? {
-        val override = System.getenv("PI_SESSIONS_DIR")?.takeIf { it.isNotBlank() }
-        if (override != null) {
-            val path = override.toPath()
-            return if (fs.exists(path)) path else null
-        }
-        val home = System.getProperty("user.home") ?: return null
-        val path = home.toPath() / ".pi" / "agent" / "sessions"
+        val override = System.getenv("PI2K_REAL_SESSIONS_DIR")?.takeIf { it.isNotBlank() } ?: return null
+        val path = override.toPath()
         return if (fs.exists(path)) path else null
+    }
+
+    private fun skipRealSessionScan(testName: String) {
+        println(
+            "[skip] $testName: PI2K_REAL_SESSIONS_DIR is not set or does not exist; " +
+                "the always-on synthetic fixture suite (SyntheticSessionFixturesTest) covers the session format.",
+        )
     }
 
     private fun jsonlFiles(root: Path): List<Path> = fs.listRecursively(root)
@@ -127,7 +129,10 @@ class RealSessionCompatibilityTest {
 
     @Test
     fun scansAllRealSessionFilesWithoutMutatingThem() = runTest {
-        val root = sessionsRoot() ?: return@runTest
+        val root = sessionsRoot() ?: run {
+            skipRealSessionScan("scansAllRealSessionFilesWithoutMutatingThem")
+            return@runTest
+        }
         val files = jsonlFiles(root)
         assertTrue(files.isNotEmpty(), "no .jsonl files under $root")
         var valid = 0
@@ -149,7 +154,10 @@ class RealSessionCompatibilityTest {
 
     @Test
     fun opensRealSessionsReadOnlyAndRebuildsCanonicalContext() = runTest(timeout = 180.seconds) {
-        val root = sessionsRoot() ?: return@runTest
+        val root = sessionsRoot() ?: run {
+            skipRealSessionScan("opensRealSessionsReadOnlyAndRebuildsCanonicalContext")
+            return@runTest
+        }
         val candidates = jsonlFiles(root).mapNotNull(::validCandidate)
         assertTrue(candidates.isNotEmpty(), "no valid pi session files under $root")
         val selected = candidates
@@ -366,7 +374,10 @@ class RealSessionCompatibilityTest {
 
     @Test
     fun listsRealSessionMetadataAndLocatesSessionsById() = runTest {
-        val root = sessionsRoot() ?: return@runTest
+        val root = sessionsRoot() ?: run {
+            skipRealSessionScan("listsRealSessionMetadataAndLocatesSessionsById")
+            return@runTest
+        }
         val directories = fs.listOrNull(root).orEmpty().filter { dir ->
             fs.metadataOrNull(dir)?.isDirectory == true
         }
@@ -510,7 +521,10 @@ class RealSessionCompatibilityTest {
 
     @Test
     fun roundTripsRealSessionsThroughSerializeAndReopen() = runTest {
-        val root = sessionsRoot() ?: return@runTest
+        val root = sessionsRoot() ?: run {
+            skipRealSessionScan("roundTripsRealSessionsThroughSerializeAndReopen")
+            return@runTest
+        }
         val candidates = jsonlFiles(root).mapNotNull(::validCandidate)
             .sortedBy { fs.metadataOrNull(it.file)?.size ?: Long.MAX_VALUE }
             .take(20)
@@ -570,7 +584,10 @@ class RealSessionCompatibilityTest {
 
     @Test
     fun sdkRestoresRealPiSessionBytesWithoutWriting() = runTest {
-        val root = sessionsRoot() ?: return@runTest
+        val root = sessionsRoot() ?: run {
+            skipRealSessionScan("sdkRestoresRealPiSessionBytesWithoutWriting")
+            return@runTest
+        }
         val candidates = jsonlFiles(root).mapNotNull(::validCandidate)
             .sortedBy { fs.metadataOrNull(it.file)?.size ?: Long.MAX_VALUE }
             .take(3)

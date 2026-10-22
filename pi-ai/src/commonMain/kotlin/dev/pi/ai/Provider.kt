@@ -28,6 +28,7 @@ class Provider(
     val auth: AuthResolver,
     val imagesApi: (() -> ImagesApiProvider)? = null,
     val classifierApis: Map<String, () -> ClassifierApiProvider> = emptyMap(),
+    val modelTransform: ((AnyModel, Map<String, String>?) -> AnyModel)? = null,
 )
 
 class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()) {
@@ -79,10 +80,11 @@ class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()
         val provider = requireProvider(model)
         val transcript = normalizeContext(context)
         val resolved = resolveAuth(provider, options)
-        val api = createApiProvider(provider, model)
+        val dispatchModel = transformModel(provider, model, options?.env) as? Model ?: model
+        val api = createApiProvider(provider, dispatchModel)
         signal?.throwIfAborted()
         val applied = applyAuthOptions(provider, resolved, options)
-        return api.stream(model, transcript, applied.copy(signal = signal ?: applied.signal))
+        return api.stream(dispatchModel, transcript, applied.copy(signal = signal ?: applied.signal))
     }
 
     suspend fun complete(
@@ -103,11 +105,12 @@ class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()
         val transcript = normalizeContext(context)
         val streamOptions = options?.stream ?: StreamOptions()
         val resolved = resolveAuth(provider, streamOptions)
-        val api = createApiProvider(provider, model)
+        val dispatchModel = transformModel(provider, model, streamOptions.env) as? Model ?: model
+        val api = createApiProvider(provider, dispatchModel)
         signal?.throwIfAborted()
         val applied = applyAuthOptions(provider, resolved, streamOptions)
         return api.streamSimple(
-            model,
+            dispatchModel,
             transcript,
             (options ?: SimpleStreamOptions()).copy(stream = applied.copy(signal = signal ?: applied.signal)),
         )
@@ -130,7 +133,8 @@ class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()
             ?: throw IllegalStateException("Provider ${provider.id} does not support image generation")
         val resolved = getAuth(model, AuthOverrides(apiKey = options?.apiKey, env = options?.env))
             ?: throw IllegalStateException("Provider is not configured: ${model.provider}")
-        imagesApi().generateImages(model, context, applyImagesOptions(resolved, options))
+        val dispatchModel = transformModel(provider, model, options?.env) as? ImageModel ?: model
+        imagesApi().generateImages(dispatchModel, context, applyImagesOptions(resolved, options))
     } catch (error: CancellationException) {
         throw error
     } catch (error: Throwable) {
@@ -156,7 +160,8 @@ class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()
             )
         val resolved = getAuth(model, AuthOverrides(apiKey = options?.apiKey, env = options?.env))
             ?: throw IllegalStateException("Provider is not configured: ${model.provider}")
-        classifierApi().classify(model, context, applyClassifierOptions(resolved, options))
+        val dispatchModel = transformModel(provider, model, options?.env) as? ClassifierModel ?: model
+        classifierApi().classify(dispatchModel, context, applyClassifierOptions(resolved, options))
     } catch (error: CancellationException) {
         throw error
     } catch (error: Throwable) {
@@ -196,11 +201,16 @@ class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()
         options: StreamOptions?,
     ): StreamOptions {
         val source = options ?: StreamOptions()
+        val headerOwnedAuth = resolved.headers.keys.any { it.equals("cf-aig-authorization", ignoreCase = true) }
+        val apiKey = if (headerOwnedAuth) null else (source.apiKey ?: resolved.apiKey)
         return source.copy(
-            apiKey = source.apiKey ?: resolved.apiKey,
+            apiKey = apiKey,
             headers = mergeHeaders(mergeHeaders(provider.headers, resolved.headers), source.headers),
         )
     }
+
+    private fun transformModel(provider: Provider, model: AnyModel, env: Map<String, String>?): AnyModel =
+        provider.modelTransform?.invoke(model, env) ?: model
 
     private fun modelHeaders(model: AnyModel): Map<String, String>? = when (model) {
         is Model -> model.headers

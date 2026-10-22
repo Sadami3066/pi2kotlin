@@ -8,9 +8,9 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.put
-import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.putJsonObject
 import okio.FileSystem
 import okio.Path
@@ -18,20 +18,7 @@ import okio.Path
 private const val GREP_DEFAULT_LIMIT = 100
 private const val TOOLS_MAX_BYTES = 51200
 private const val MAX_SCAN_FILE_BYTES = 16L * 1024 * 1024
-
-private val ignoredDirectoryNames = setOf(
-    ".git",
-    ".gradle",
-    ".kotlin",
-    ".idea",
-    "node_modules",
-    "build",
-    "out",
-    "target",
-    "__pycache__",
-    ".venv",
-    "venv",
-)
+private const val LINE_SIGNAL_CHECK_INTERVAL = 1024
 
 private val toolsGrepParameters: JsonObject = buildJsonObject {
     put("type", "object")
@@ -92,71 +79,73 @@ fun grepTool(cwd: Path, fs: FileSystem): CodingTool = CodingTool(
         val matches = buildMatcher(pattern, ignoreCase, literal)
         val fileFilter = globPattern?.takeIf { it.isNotEmpty() }?.let(::buildGrepGlobMatcher)
 
-        val candidateFiles = if (searchingDirectory) {
-            walkToolFiles(fs, searchPath, fileFilter)
-        } else {
-            listOf(searchPath)
-        }
-
         val outputLines = mutableListOf<String>()
         var matchCount = 0
-        var matchLimitReached = false
         var linesTruncated = false
 
-        files@ for (file in candidateFiles) {
-            if (matchCount >= limit) {
-                break@files
-            }
+        val scanFile: suspend (Path) -> Boolean = { file ->
             signal?.throwIfAborted()
             val size = fs.metadataOrNull(file)?.size
-            if (size != null && size > MAX_SCAN_FILE_BYTES) {
-                continue@files
-            }
-            val text = runCatching { fs.read(file) { readUtf8() } }.getOrNull() ?: continue@files
-            if (text.indexOf('\u0000') >= 0) {
-                continue@files
-            }
-            val fileLines = text.split("\n").let { lines ->
-                if (lines.isNotEmpty() && lines.last().isEmpty()) lines.dropLast(1) else lines
-            }
-            val displayPath = grepDisplayPath(searchPath, file, searchingDirectory)
-
-            for (index in fileLines.indices) {
-                val line = fileLines[index].removeSuffix("\r")
-                if (!matches(line)) {
-                    continue
-                }
-                matchCount++
-                if (contextLines == 0) {
-                    val truncated = truncateGrepLine(line)
-                    if (truncated.second) {
-                        linesTruncated = true
+            val scannable = size == null || size <= MAX_SCAN_FILE_BYTES
+            if (scannable) {
+                val text = runCatching { fs.read(file) { readUtf8() } }.getOrNull()
+                if (text != null && text.indexOf('\u0000') < 0) {
+                    val fileLines = text.split("\n").let { lines ->
+                        if (lines.isNotEmpty() && lines.last().isEmpty()) lines.dropLast(1) else lines
                     }
-                    outputLines += "$displayPath:${index + 1}: ${truncated.first}"
-                } else {
-                    val start = (index - contextLines).coerceAtLeast(0)
-                    val end = (index + contextLines).coerceAtMost(fileLines.size - 1)
-                    for (current in start..end) {
-                        val rawLine = fileLines[current].removeSuffix("\r")
-                        val truncated = truncateGrepLine(rawLine)
-                        if (truncated.second) {
-                            linesTruncated = true
+                    val displayPath = grepDisplayPath(searchPath, file, searchingDirectory)
+                    for (index in fileLines.indices) {
+                        if (index % LINE_SIGNAL_CHECK_INTERVAL == 0) signal?.throwIfAborted()
+                        val line = fileLines[index].removeSuffix("\r")
+                        if (!matches(line)) {
+                            continue
                         }
-                        val lineNumber = current + 1
-                        if (current == index) {
-                            outputLines += "$displayPath:$lineNumber: ${truncated.first}"
+                        matchCount++
+                        if (contextLines == 0) {
+                            val truncated = truncateGrepLine(line)
+                            if (truncated.second) {
+                                linesTruncated = true
+                            }
+                            outputLines += "$displayPath:${index + 1}: ${truncated.first}"
                         } else {
-                            outputLines += "$displayPath-$lineNumber- ${truncated.first}"
+                            val start = (index - contextLines).coerceAtLeast(0)
+                            val end = (index + contextLines).coerceAtMost(fileLines.size - 1)
+                            for (current in start..end) {
+                                val rawLine = fileLines[current].removeSuffix("\r")
+                                val truncated = truncateGrepLine(rawLine)
+                                if (truncated.second) {
+                                    linesTruncated = true
+                                }
+                                val lineNumber = current + 1
+                                if (current == index) {
+                                    outputLines += "$displayPath:$lineNumber: ${truncated.first}"
+                                } else {
+                                    outputLines += "$displayPath-$lineNumber- ${truncated.first}"
+                                }
+                            }
+                        }
+                        if (matchCount >= limit) {
+                            break
                         }
                     }
                 }
-                if (matchCount >= limit) {
-                    matchLimitReached = true
-                    break@files
-                }
             }
+            matchCount < limit
         }
 
+        if (searchingDirectory) {
+            walkToolFilesStreaming(
+                fs = fs,
+                root = searchPath,
+                hierarchy = GitIgnoreHierarchy(fs, searchPath),
+                signal = signal,
+                filter = fileFilter,
+            ) { file -> scanFile(file) }
+        } else {
+            scanFile(searchPath)
+        }
+
+        val matchLimitReached = matchCount >= limit
         if (matchCount == 0) {
             textResult("No matches found")
         } else {
@@ -232,34 +221,6 @@ internal fun toolRelativePath(base: Path, target: Path): String? {
         }
     }
     return targetParts.drop(baseParts.size).joinToString("/")
-}
-
-internal suspend fun walkToolFiles(
-    fs: FileSystem,
-    root: Path,
-    filter: ((Path) -> Boolean)? = null,
-): List<Path> {
-    val files = mutableListOf<Path>()
-    val pending = ArrayDeque<Path>()
-    pending.addLast(root)
-    while (pending.isNotEmpty()) {
-        val directory = pending.removeLast()
-        val children = runCatching { fs.list(directory) }.getOrNull() ?: continue
-        for (child in children.sortedBy { it.name }) {
-            val metadata = runCatching { fs.metadataOrNull(child) }.getOrNull() ?: continue
-            if (metadata.isDirectory) {
-                if (child.name in ignoredDirectoryNames) {
-                    continue
-                }
-                pending.addLast(child)
-            } else if (metadata.isRegularFile) {
-                if (filter == null || filter(child)) {
-                    files += child
-                }
-            }
-        }
-    }
-    return files.sortedBy { it.toString() }
 }
 
 internal fun formatToolSize(bytes: Int): String {

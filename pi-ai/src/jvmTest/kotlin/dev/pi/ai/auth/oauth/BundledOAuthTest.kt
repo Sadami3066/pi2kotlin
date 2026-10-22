@@ -2,6 +2,7 @@ package dev.pi.ai.auth.oauth
 
 import dev.pi.ai.auth.AuthOverrides
 import dev.pi.ai.auth.CredentialStore
+import dev.pi.ai.auth.FileCredentialStore
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -16,7 +17,7 @@ import kotlin.test.assertTrue
 class BundledOAuthTest {
     private fun temporaryStore(): Pair<CredentialStore, Path> {
         val directory = FileSystem.SYSTEM_TEMPORARY_DIRECTORY / "pi-oauth-${System.nanoTime()}"
-        return CredentialStore(directory) to directory
+        return FileCredentialStore(directory) to directory
     }
 
     @Test
@@ -155,7 +156,7 @@ class BundledOAuthTest {
             val resolver = oauthResolver("anthropic", anthropicOAuth, store, transport)
             val auth = resolver.resolve(AuthOverrides(apiKey = "explicit-key"))
             assertEquals("explicit-key", auth?.apiKey)
-            assertEquals("stored credential", auth?.source)
+            assertEquals("runtime", auth?.source)
         } finally {
             FileSystem.SYSTEM.deleteRecursively(directory)
         }

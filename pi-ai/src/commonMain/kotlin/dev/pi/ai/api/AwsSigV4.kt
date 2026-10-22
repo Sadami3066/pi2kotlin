@@ -1,5 +1,6 @@
 package dev.pi.ai.api
 
+import dev.pi.ai.platform.platformCurrentTimeMillis
 import dev.pi.ai.auth.oauth.sha256
 
 data class AwsCredentials(
@@ -40,7 +41,7 @@ object AwsSigV4 {
         credentials: AwsCredentials,
         region: String,
         service: String,
-        epochMillis: Long = System.currentTimeMillis(),
+        epochMillis: Long = platformCurrentTimeMillis(),
     ): AwsSignedRequest {
         val parsed = parseUrl(url)
         val dateTime = formatAmzDate(epochMillis)

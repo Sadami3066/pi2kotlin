@@ -7,6 +7,7 @@ import dev.pi.ai.Provider
 import dev.pi.ai.UserMessage
 import dev.pi.ai.auth.AmbientAuth
 import dev.pi.ai.auth.EnvApiKeyAuth
+import dev.pi.ai.auth.ProviderAuthResolver
 import dev.pi.ai.providers.FauxResponseStep
 import dev.pi.ai.providers.fauxAssistantMessage
 import kotlinx.coroutines.runBlocking
@@ -108,11 +109,12 @@ class ModelRuntimeTest {
 
     @Test
     fun streamSimpleUsesStoredCredential() = runBlocking {
-        val harness = fauxHarness(providerId = "gated", modelId = "m1", auth = gatedAuth)
-        harness.handle.setResponses(listOf(FauxResponseStep.Fixed(fauxAssistantMessage("stored auth works"))))
         val fs = FakeFileSystem()
         val store = newCredentialStore(fs)
         store.writeApiKey("gated", "sk-stored")
+        val auth = dev.pi.ai.auth.ProviderAuthResolver("gated", store, listOf("GATED_KEY"))
+        val harness = fauxHarness(providerId = "gated", modelId = "m1", auth = auth)
+        harness.handle.setResponses(listOf(FauxResponseStep.Fixed(fauxAssistantMessage("stored auth works"))))
         val runtime = ModelRuntime(modelsOf(harness.provider), store)
 
         val message = runtime.completeSimple(harness.model, context())

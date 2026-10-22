@@ -1,5 +1,6 @@
 package dev.pi.ai.auth
 
+import dev.pi.ai.platform.platformEnv
 import kotlinx.serialization.Serializable
 
 fun interface AuthContext {
@@ -7,7 +8,7 @@ fun interface AuthContext {
 }
 
 object SystemAuthContext : AuthContext {
-    override fun env(name: String): String? = System.getenv(name)?.takeIf { it.isNotBlank() }
+    override fun env(name: String): String? = platformEnv(name)?.takeIf { it.isNotBlank() }
 }
 
 object AuthEnvironment {

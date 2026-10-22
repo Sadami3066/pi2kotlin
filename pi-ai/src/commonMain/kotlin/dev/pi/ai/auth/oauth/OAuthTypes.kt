@@ -1,5 +1,7 @@
 package dev.pi.ai.auth.oauth
 
+import dev.pi.ai.platform.platformCurrentTimeMillis
+import dev.pi.ai.platform.platformSecureRandomBytes
 import dev.pi.ai.PiJson
 import dev.pi.ai.RunSignal
 import dev.pi.ai.auth.OAuthCredential as StoredOAuthCredential
@@ -15,7 +17,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
-import kotlin.random.Random
 
 data class OAuthSelectOption(
     val id: String,
@@ -88,7 +89,7 @@ object OAuthRuntime {
 
 fun oauthRandomBytes(count: Int): ByteArray {
     OAuthRuntime.randomBytes?.let { return it(count) }
-    return Random.nextBytes(count)
+    return platformSecureRandomBytes(count)
 }
 
 private val knownCredentialKeys = setOf(
@@ -167,4 +168,4 @@ internal fun JsonObject.stringListField(name: String): List<String>? {
 internal fun parseJsonOrNull(text: String): JsonElement? =
     runCatching { PiJson.parseToJsonElement(text) }.getOrNull()
 
-internal fun oauthNowMillis(): Long = System.currentTimeMillis()
+internal fun oauthNowMillis(): Long = platformCurrentTimeMillis()

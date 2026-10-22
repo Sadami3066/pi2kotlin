@@ -1,17 +1,19 @@
 package dev.pi.ai
 
+import dev.pi.ai.platform.PlatformAtomicBoolean
+import dev.pi.ai.platform.platformCurrentTimeMillis
+import kotlin.time.TimeSource
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.receiveAsFlow
-import java.util.concurrent.atomic.AtomicBoolean
 
 class AssistantMessageEventStream {
     private val channel = Channel<AssistantMessageEvent>(Channel.UNLIMITED)
     private val resultDeferred = CompletableDeferred<AssistantMessage>()
-    private val done = AtomicBoolean(false)
-    private val startedAt = System.currentTimeMillis()
-    private val startedAtNanos = System.nanoTime()
+    private val done = PlatformAtomicBoolean(false)
+    private val startedAt = platformCurrentTimeMillis()
+    private val startedAtMark = TimeSource.Monotonic.markNow()
 
     val events: Flow<AssistantMessageEvent> = channel.receiveAsFlow()
 
@@ -53,7 +55,7 @@ class AssistantMessageEventStream {
     private fun time(message: AssistantMessage) {
         if (message.durationMs != null) return
         if (message.timestamp < startedAt) return
-        message.durationMs = ((System.nanoTime() - startedAtNanos) / 1_000_000).coerceAtLeast(0)
+        message.durationMs = startedAtMark.elapsedNow().inWholeMilliseconds.coerceAtLeast(0)
     }
 }
 

@@ -1,5 +1,6 @@
 package dev.pi.ai.api
 
+import dev.pi.ai.platform.platformCurrentTimeMillis
 import dev.pi.ai.AssistantMessage
 import dev.pi.ai.AssistantMessageDiagnostic
 import dev.pi.ai.AssistantMessageEvent
@@ -278,7 +279,7 @@ private fun appendRewriteDiagnostic(message: AssistantMessage, rewrite: PiMessag
     diagnostics.add(
         AssistantMessageDiagnostic(
             type = "pi_messages_rewrite",
-            timestamp = System.currentTimeMillis(),
+            timestamp = platformCurrentTimeMillis(),
             details = rewrite.toJson(),
         ),
     )
@@ -300,7 +301,7 @@ private fun createFailureMessage(
         usage = createEmptyUsage(),
         stopReason = if (aborted) StopReason.Aborted else StopReason.Error,
         errorMessage = message,
-        timestamp = System.currentTimeMillis(),
+        timestamp = platformCurrentTimeMillis(),
     )
     if (diagnostic != null) failure.diagnostics = mutableListOf(diagnostic)
     return failure
@@ -322,7 +323,7 @@ private suspend fun runPiMessagesStream(
         model = model.id,
         usage = createEmptyUsage(),
         stopReason = StopReason.Pending,
-        timestamp = System.currentTimeMillis(),
+        timestamp = platformCurrentTimeMillis(),
     )
     val converter = PiMessagesEventConverter(model, partial)
     val url = piMessagesUrl(model, debug)
@@ -386,7 +387,7 @@ private suspend fun runPiMessagesStream(
         val diagnostic = if (!aborted && error is PiMessagesResponseException) {
             AssistantMessageDiagnostic(
                 type = "pi_messages_response_failure",
-                timestamp = System.currentTimeMillis(),
+                timestamp = platformCurrentTimeMillis(),
                 error = DiagnosticErrorInfo(
                     name = "PiMessagesResponseException",
                     message = error.message ?: "",
@@ -541,7 +542,7 @@ private fun createResponseException(
         put("statusText", JsonPrimitive(statusText))
         if (errorBodyElement != null) put("error", errorBodyElement)
         if (errorPayload == null) put("body", JsonPrimitive(truncateDiagnosticString(body)))
-        put("timestampMs", JsonPrimitive(System.currentTimeMillis()))
+        put("timestampMs", JsonPrimitive(platformCurrentTimeMillis()))
     }
     return PiMessagesResponseException(formatted, code, details)
 }

@@ -13,7 +13,7 @@ import dev.pi.ai.SimpleStreamOptions
 import dev.pi.ai.StreamOptions
 import dev.pi.ai.TranscriptContext
 import dev.pi.ai.api.ApiProvider
-import dev.pi.ai.api.openAICompletionsApi
+import dev.pi.ai.api.chatApiFactory
 import dev.pi.ai.auth.AuthResolver
 import dev.pi.ai.auth.CredentialStore
 import dev.pi.ai.auth.EnvApiKeyAuth
@@ -81,13 +81,12 @@ class ProviderComposer(
             models = models,
             allModels = models,
             auth = auth,
+            modelTransform = base?.modelTransform,
         )
     }
 
-    private fun defaultApiFactory(api: String): () -> ApiProvider = when (api) {
-        "openai-completions" -> ({ openAICompletionsApi(transport) })
-        else -> ({ UnimplementedApiProvider(api) })
-    }
+    private fun defaultApiFactory(api: String): () -> ApiProvider =
+        chatApiFactory(api, transport) ?: ({ UnimplementedApiProvider(api) })
 
     private fun composeAuth(config: CustomProviderConfig, base: Provider?): AuthResolver? {
         val rawKey = config.apiKey ?: return base?.auth

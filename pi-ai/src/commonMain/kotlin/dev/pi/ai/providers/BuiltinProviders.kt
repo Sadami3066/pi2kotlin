@@ -10,19 +10,14 @@ import dev.pi.ai.TranscriptContext
 import dev.pi.ai.api.ApiProvider
 import dev.pi.ai.api.ClassifierApiProvider
 import dev.pi.ai.api.ImagesApiProvider
-import dev.pi.ai.api.anthropicMessagesApi
-import dev.pi.ai.api.azureOpenAIResponsesApi
-import dev.pi.ai.api.bedrockConverseStreamApi
+import dev.pi.ai.AnyModel
+import dev.pi.ai.api.ANTHROPIC_MESSAGES_CHAT_API
+import dev.pi.ai.api.OPENAI_COMPLETIONS_CHAT_API
+import dev.pi.ai.api.OPENAI_RESPONSES_CHAT_API
+import dev.pi.ai.api.chatApiFactory
 import dev.pi.ai.api.cloudflareWorkersAiSystemOneApi
-import dev.pi.ai.api.googleGenerativeAIApi
-import dev.pi.ai.api.googleVertexApi
-import dev.pi.ai.api.mistralConversationsApi
-import dev.pi.ai.api.openAICodexResponsesApi
-import dev.pi.ai.api.openAICompletionsApi
-import dev.pi.ai.api.openAIResponsesApi
 import dev.pi.ai.api.openAiDecisionsApi
 import dev.pi.ai.api.openRouterImagesApi
-import dev.pi.ai.api.piMessagesApi
 import dev.pi.ai.api.typesafeSystemOneApi
 import dev.pi.ai.ClassifierModel
 import dev.pi.ai.ImageModel
@@ -33,24 +28,14 @@ import dev.pi.ai.ClassifierOptions
 import dev.pi.ai.AssistantImages
 import dev.pi.ai.ClassifierResult
 import dev.pi.ai.auth.AuthResolver
-import dev.pi.ai.auth.CompositeAuth
 import dev.pi.ai.auth.CredentialStore
 import dev.pi.ai.auth.EnvApiKeyAuth
-import dev.pi.ai.auth.StoredApiKeyAuth
+import dev.pi.ai.auth.ProviderAuthResolver
 import dev.pi.ai.auth.oauth.bundledOAuthFlows
-import dev.pi.ai.auth.oauth.oauthResolver
 import dev.pi.ai.http.HttpTransport
 
-private const val OPENAI_COMPLETIONS_API = "openai-completions"
-private const val OPENAI_RESPONSES_API = "openai-responses"
-private const val OPENAI_CODEX_RESPONSES_API = "openai-codex-responses"
-private const val AZURE_OPENAI_RESPONSES_API = "azure-openai-responses"
-private const val ANTHROPIC_MESSAGES_API = "anthropic-messages"
-private const val GOOGLE_GENERATIVE_AI_API = "google-generative-ai"
-private const val GOOGLE_VERTEX_API = "google-vertex"
-private const val MISTRAL_CONVERSATIONS_API = "mistral-conversations"
-private const val BEDROCK_CONVERSE_STREAM_API = "bedrock-converse-stream"
-private const val PI_MESSAGES_API = "pi-messages"
+private const val CLOUDFLARE_WORKERS_AI_PROVIDER = "cloudflare-workers-ai"
+private const val CLOUDFLARE_AI_GATEWAY_PROVIDER = "cloudflare-ai-gateway"
 private const val OPENROUTER_IMAGES_API = "openrouter-images"
 private const val TYPESAFE_SYSTEM_ONE_API = "typesafe-system-one"
 private const val OPENAI_DECISIONS_API = "openai-decisions"
@@ -64,7 +49,15 @@ fun builtinProviders(
     return BUILTIN_PROVIDER_SPECS.map { spec ->
         val allModels = ModelCatalog.findByProvider(spec.id)
         val chatModels = allModels.filterIsInstance<Model>()
-        val apis = allModels.map { it.api }.distinct()
+        val apis = when (spec.id) {
+            CLOUDFLARE_AI_GATEWAY_PROVIDER -> listOf(
+                ANTHROPIC_MESSAGES_CHAT_API,
+                OPENAI_COMPLETIONS_CHAT_API,
+                OPENAI_RESPONSES_CHAT_API,
+            )
+
+            else -> chatModels.map { it.api }.distinct()
+        }
         val imageApis = allModels.filterIsInstance<ImageModel>().map { it.api }.distinct()
         val classifierApis = allModels.filterIsInstance<ClassifierModel>().map { it.api }.distinct()
         Provider(
@@ -72,12 +65,14 @@ fun builtinProviders(
             name = spec.name,
             baseUrl = spec.baseUrl,
             headers = null,
-            apiProviders = apis.associateWith { api -> apiFactory(api, transport) },
+            apiProviders = apis.associateWith { api -> chatApiFactory(api, transport) ?: unimplementedApiFactory(api) },
             models = chatModels,
             allModels = allModels,
-            auth = providerAuth(spec, oauthFlows, credentialStore, transport),
+            auth = cloudflareAuth(spec, credentialStore)
+                ?: providerAuth(spec, oauthFlows, credentialStore, transport),
             imagesApi = imagesFactory(imageApis, transport),
             classifierApis = classifierApis.associateWith { api -> classifierFactory(api, transport) },
+            modelTransform = cloudflareModelTransformFor(spec, credentialStore),
         )
     }
 }
@@ -89,25 +84,44 @@ private fun providerAuth(
     transport: HttpTransport,
 ): AuthResolver {
     if (credentialStore == null) return EnvApiKeyAuth(spec.authLabel, spec.envVars)
-    val resolvers = buildList {
-        oauthFlows[spec.id]?.let { flow -> add(oauthResolver(spec.id, flow, credentialStore, transport)) }
-        add(StoredApiKeyAuth(spec.id, credentialStore, spec.envVars))
-    }
-    return CompositeAuth(resolvers)
+    return ProviderAuthResolver(
+        providerId = spec.id,
+        store = credentialStore,
+        envVars = spec.envVars,
+        oauthFlow = oauthFlows[spec.id],
+        transport = transport,
+    )
 }
 
-private fun apiFactory(api: String, transport: HttpTransport): () -> ApiProvider = when (api) {
-    OPENAI_COMPLETIONS_API -> ({ openAICompletionsApi(transport) })
-    OPENAI_RESPONSES_API -> ({ openAIResponsesApi(transport) })
-    OPENAI_CODEX_RESPONSES_API -> ({ openAICodexResponsesApi(transport) })
-    AZURE_OPENAI_RESPONSES_API -> ({ azureOpenAIResponsesApi(transport) })
-    ANTHROPIC_MESSAGES_API -> ({ anthropicMessagesApi(transport) })
-    GOOGLE_GENERATIVE_AI_API -> ({ googleGenerativeAIApi(transport) })
-    GOOGLE_VERTEX_API -> ({ googleVertexApi(transport) })
-    MISTRAL_CONVERSATIONS_API -> ({ mistralConversationsApi(transport) })
-    BEDROCK_CONVERSE_STREAM_API -> ({ bedrockConverseStreamApi(transport) })
-    PI_MESSAGES_API -> ({ piMessagesApi(transport) })
-    else -> ({ UnimplementedApiProvider(api) })
+private fun unimplementedApiFactory(api: String): () -> ApiProvider = ({ UnimplementedApiProvider(api) })
+
+private fun cloudflareAuth(spec: BuiltinProviderSpec, credentialStore: CredentialStore?): AuthResolver? =
+    when (spec.id) {
+        CLOUDFLARE_WORKERS_AI_PROVIDER -> CloudflareAuthResolver(
+            spec.id,
+            CloudflareAuthKind.WorkersAi,
+            credentialStore,
+        )
+
+        CLOUDFLARE_AI_GATEWAY_PROVIDER -> CloudflareAuthResolver(
+            spec.id,
+            CloudflareAuthKind.AiGateway,
+            credentialStore,
+        )
+
+        else -> null
+    }
+
+private fun cloudflareModelTransformFor(
+    spec: BuiltinProviderSpec,
+    credentialStore: CredentialStore?,
+): ((AnyModel, Map<String, String>?) -> AnyModel)? = when (spec.id) {
+    CLOUDFLARE_WORKERS_AI_PROVIDER, CLOUDFLARE_AI_GATEWAY_PROVIDER -> cloudflareModelTransform(
+        credentialStore,
+        spec.id,
+    )
+
+    else -> null
 }
 
 private fun imagesFactory(apis: List<String>, transport: HttpTransport): (() -> ImagesApiProvider)? =

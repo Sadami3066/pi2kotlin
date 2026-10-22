@@ -1,0 +1,12 @@
+10-22 15:53:04.458 29963 29963 I pi2kotlin-demo: StrictMode enabled on thread=main
+10-22 15:53:04.458 29963 29963 I pi2kotlin-demo: onCreate thread=main isMain=true device=22101316UCP android=13
+10-22 15:53:04.669 29963 29963 D StrictMode: StrictMode policy violation; ~duration=114 ms: android.os.strictmode.DiskReadViolation
+10-22 15:53:04.675 29963 29963 I pi2kotlin-demo: mock start thread=main
+10-22 15:53:04.688 29963 30007 I pi2kotlin-demo: mock createAgentSession start thread=DefaultDispatcher-worker-1
+10-22 15:53:05.166 29963 30007 I pi2kotlin-demo: mock createAgentSession done thread=DefaultDispatcher-worker-1
+10-22 15:53:05.167 29963 30007 I pi2kotlin-demo: session attached mode=mock thread=DefaultDispatcher-worker-1
+10-22 15:53:05.167 29963 30007 I pi2kotlin-demo: mock prompt start thread=DefaultDispatcher-worker-1
+10-22 15:53:05.249 29963 29963 I pi2kotlin-demo: ui update thread=main isMain=true
+10-22 15:53:05.364 29963 29963 I pi2kotlin-demo: ui update thread=main isMain=true
+10-22 15:53:05.485 29963 29963 I pi2kotlin-demo: ui update thread=main isMain=true
+10-22 15:53:08.026 29963 30009 I pi2kotlin-demo: mock prompt done thread=DefaultDispatcher-worker-3 chars=135

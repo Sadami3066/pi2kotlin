@@ -6,10 +6,10 @@ import dev.pi.ai.auth.AuthContext
 import dev.pi.ai.auth.AuthEnvironment
 import dev.pi.ai.auth.AuthOverrides
 import dev.pi.ai.auth.AuthResolver
-import dev.pi.ai.auth.CredentialStore
 import dev.pi.ai.auth.EnvApiKeyAuth
 import dev.pi.ai.auth.OAuthCredential
 import dev.pi.ai.auth.StaticApiKeyAuth
+import dev.pi.ai.auth.fileCredentialStore
 import dev.pi.ai.http.HttpRequest
 import dev.pi.ai.http.HttpResponse
 import dev.pi.ai.http.HttpTransport
@@ -112,9 +112,20 @@ class ModelsTest {
             assertTrue(catalogModels.isNotEmpty(), "provider ${provider.id} has no catalog models")
             assertEquals(catalogModels.size, provider.allModels.size, "provider ${provider.id} model count")
             assertEquals(
-                catalogModels.map { it.api }.distinct().toSet(),
+                catalogModels.filterIsInstance<Model>().map { it.api }.distinct().toSet(),
                 provider.apiProviders.keys,
                 "provider ${provider.id} api providers",
+            )
+            val imageApis = catalogModels.filterIsInstance<ImageModel>().map { it.api }.distinct()
+            if (imageApis.isEmpty()) {
+                assertNull(provider.imagesApi, "provider ${provider.id} image api")
+            } else {
+                assertNotNull(provider.imagesApi, "provider ${provider.id} image api")
+            }
+            assertEquals(
+                catalogModels.filterIsInstance<ClassifierModel>().map { it.api }.distinct().toSet(),
+                provider.classifierApis.keys,
+                "provider ${provider.id} classifier apis",
             )
             assertEquals(
                 catalogModels.filterIsInstance<Model>().map { it.id },
@@ -137,14 +148,14 @@ class ModelsTest {
         assertEquals("anthropic-messages", placeholder.api)
 
         val openrouter = assertNotNull(providers["openrouter"])
-        assertEquals(
-            setOf("anthropic-messages", "openai-completions", "openrouter-images", "typesafe-system-one"),
-            openrouter.apiProviders.keys,
-        )
+        assertEquals(setOf("anthropic-messages", "openai-completions"), openrouter.apiProviders.keys)
+        assertNotNull(openrouter.imagesApi)
+        assertEquals(setOf("typesafe-system-one"), openrouter.classifierApis.keys)
 
         val typesafe = assertNotNull(providers["typesafe"])
         assertTrue(typesafe.models.isEmpty())
-        assertEquals(setOf("typesafe-system-one"), typesafe.apiProviders.keys)
+        assertTrue(typesafe.apiProviders.isEmpty())
+        assertEquals(setOf("typesafe-system-one"), typesafe.classifierApis.keys)
         assertTrue(typesafe.allModels.isNotEmpty())
     }
 
@@ -434,7 +445,7 @@ class ModelsTest {
     fun credentialStoreRoundTripsApiKeys() {
         val directory = tempAuthDirectory()
         try {
-            val store = CredentialStore(directory)
+            val store = fileCredentialStore(directory)
             store.writeApiKey("anthropic", "sk-test", mapOf("CLOUDFLARE_ACCOUNT_ID" to "account"))
             assertEquals("sk-test", store.readApiKey("anthropic"))
             assertEquals(mapOf("CLOUDFLARE_ACCOUNT_ID" to "account"), store.readEnv("anthropic"))
@@ -466,7 +477,7 @@ class ModelsTest {
     fun credentialStoreReadsPiAuthJsonAndOAuthCredentials() {
         val directory = tempAuthDirectory()
         try {
-            val store = CredentialStore(directory)
+            val store = fileCredentialStore(directory)
             FileSystem.SYSTEM.createDirectories(directory)
             FileSystem.SYSTEM.write(directory / "auth.json") {
                 writeUtf8(

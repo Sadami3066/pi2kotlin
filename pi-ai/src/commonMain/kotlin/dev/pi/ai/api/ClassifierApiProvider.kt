@@ -1,5 +1,6 @@
 package dev.pi.ai.api
 
+import dev.pi.ai.platform.platformCurrentTimeMillis
 import dev.pi.ai.ClassifierContext
 import dev.pi.ai.ClassifierModel
 import dev.pi.ai.ClassifierOptions
@@ -45,7 +46,7 @@ internal fun classifierErrorResult(model: ClassifierModel, error: Throwable): Cl
     answers = emptyMap(),
     stopReason = ClassifierStopReason.Error,
     errorMessage = error.message ?: error.toString(),
-    timestamp = System.currentTimeMillis(),
+    timestamp = platformCurrentTimeMillis(),
 )
 
 internal fun isJsonRecord(value: JsonElement?): Boolean = value is JsonObject

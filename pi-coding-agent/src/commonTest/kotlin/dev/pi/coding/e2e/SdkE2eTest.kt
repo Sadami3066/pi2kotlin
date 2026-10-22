@@ -267,18 +267,26 @@ class SdkE2eTest {
             )
 
             val roles = context.persistedMessageRoles()
-            assertEquals(listOf("user", "assistant", "toolResult", "assistant"), roles)
+            assertEquals(listOf("system", "user", "assistant", "toolResult", "assistant"), roles)
             val entries = context.persistedEntries()
             assertEquals(
-                listOf("model_change", "thinking_level_change", "message", "message", "message", "message"),
+                listOf(
+                    "model_change",
+                    "thinking_level_change",
+                    "message",
+                    "message",
+                    "message",
+                    "message",
+                    "message",
+                ),
                 entries.map { it.type },
             )
-            val assistantEntry = entries.filterIsInstance<SessionMessageEntry>()[1]
+            val assistantEntry = entries.filterIsInstance<SessionMessageEntry>()[2]
             val assistant = assertIs<AssistantMessage>(assistantEntry.message)
             val toolCall = assertIs<dev.pi.ai.ToolCall>(assistant.content.filterIsInstance<dev.pi.ai.ToolCall>().single())
             assertEquals("echo-1", toolCall.id)
             assertEquals("hello", toolCall.arguments["text"]?.let { (it as? JsonPrimitive)?.contentOrNull })
-            val toolResultEntry = entries.filterIsInstance<SessionMessageEntry>()[2]
+            val toolResultEntry = entries.filterIsInstance<SessionMessageEntry>()[3]
             val toolResult = assertIs<ToolResultMessage>(toolResultEntry.message)
             assertEquals("echo-1", toolResult.toolCallId)
             assertEquals(false, toolResult.isError)
@@ -293,7 +301,7 @@ class SdkE2eTest {
             assertEquals(3, faux.state.callCount)
             val multiTurnRoles = E2eContext(fs, faux, session).persistedMessageRoles()
             assertEquals(
-                listOf("user", "assistant", "toolResult", "assistant", "user", "assistant"),
+                listOf("system", "user", "assistant", "toolResult", "assistant", "user", "assistant"),
                 multiTurnRoles,
             )
             assertEquals(
@@ -360,7 +368,7 @@ class SdkE2eTest {
 
             val context = E2eContext(fs, faux, session)
             assertEquals(
-                listOf("user", "assistant", "user", "assistant", "user", "assistant"),
+                listOf("system", "user", "assistant", "user", "assistant", "user", "assistant"),
                 context.persistedMessageRoles(),
             )
             val persistedTexts = context.persistedMessageTexts()
@@ -368,7 +376,7 @@ class SdkE2eTest {
             assertTrue(persistedTexts.contains("follow-up message"))
             val reopened = SessionManager.open(assertNotNull(session.sessionFile), fs)
             assertEquals(
-                listOf("user", "assistant", "user", "assistant", "user", "assistant"),
+                listOf("system", "user", "assistant", "user", "assistant", "user", "assistant"),
                 reopened.buildSessionContext().messages.map {
                     when (it) {
                         is UserMessage -> "user"

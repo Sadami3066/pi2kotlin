@@ -13,7 +13,6 @@ import dev.pi.ai.auth.ApiKeyCredential
 import dev.pi.ai.auth.AuthOverrides
 import dev.pi.ai.auth.Credential
 import dev.pi.ai.auth.CredentialStore
-import dev.pi.ai.auth.OAuthCredential
 
 class ModelRuntime(
     val models: Models,
@@ -80,7 +79,7 @@ class ModelRuntime(
         val requestEnv = mergeRequestEnv(env, credentialEnv, options?.stream?.env)
         val requestHeaders = mergeRequestHeaders(model.headers, options?.stream?.headers)
         val streamOptions = (options?.stream ?: StreamOptions()).copy(
-            apiKey = options?.stream?.apiKey ?: credentialApiKey(credential),
+            apiKey = options?.stream?.apiKey,
             env = requestEnv.ifEmpty { null },
             headers = requestHeaders,
         )
@@ -104,12 +103,6 @@ class ModelRuntime(
     suspend fun refresh() {
         availableSnapshot = null
         getAvailableSnapshot()
-    }
-
-    private fun credentialApiKey(credential: Credential?): String? = when (credential) {
-        is ApiKeyCredential -> credential.key
-        is OAuthCredential -> credential.access
-        null -> null
     }
 
     private fun mergeRequestEnv(

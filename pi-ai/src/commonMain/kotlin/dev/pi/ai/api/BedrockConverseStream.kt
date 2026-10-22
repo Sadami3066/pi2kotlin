@@ -1,5 +1,6 @@
 package dev.pi.ai.api
 
+import dev.pi.ai.platform.platformCurrentTimeMillis
 import dev.pi.ai.AssistantMessage
 import dev.pi.ai.AssistantMessageDiagnostic
 import dev.pi.ai.AssistantMessageEventStream
@@ -263,7 +264,7 @@ private suspend fun runBedrockStream(
         model = model.id,
         usage = Usage.empty(),
         stopReason = StopReason.Pending,
-        timestamp = System.currentTimeMillis(),
+        timestamp = platformCurrentTimeMillis(),
     )
     var state: BedrockStreamState? = null
     try {
@@ -586,7 +587,7 @@ private fun appendDiagnostic(
     diagnostics.add(
         AssistantMessageDiagnostic(
             type = type,
-            timestamp = System.currentTimeMillis(),
+            timestamp = platformCurrentTimeMillis(),
             error = message?.let { DiagnosticErrorInfo(message = it) },
             details = details,
         ),

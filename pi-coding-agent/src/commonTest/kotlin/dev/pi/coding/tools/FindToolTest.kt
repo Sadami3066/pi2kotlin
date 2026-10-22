@@ -86,8 +86,9 @@ class FindToolTest {
     }
 
     @Test
-    fun skipsGitAndNodeModules() = runTest {
+    fun skipsGitAndGitignoredNodeModules() = runTest {
         withTempDir { root ->
+            fs.writeText(root, ".gitignore", "node_modules/\n")
             fs.writeText(root, ".git/a.kt", "a")
             fs.writeText(root, "node_modules/b.kt", "b")
             fs.writeText(root, "src/c.kt", "c")

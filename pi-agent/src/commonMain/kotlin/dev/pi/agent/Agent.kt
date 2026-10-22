@@ -1,5 +1,6 @@
 package dev.pi.agent
 
+import dev.pi.ai.platform.platformCurrentTimeMillis
 import dev.pi.ai.AssistantMessage
 import dev.pi.ai.BlockContent
 import dev.pi.ai.ClientIdentity
@@ -23,7 +24,6 @@ import dev.pi.ai.utils.getCurrentSystemMessage
 import dev.pi.ai.utils.toToolDeclaration
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
-import java.util.ArrayDeque
 
 typealias AgentListener = suspend (event: AgentEvent, signal: RunSignal) -> Unit
 
@@ -208,7 +208,7 @@ class Agent(options: AgentOptions = AgentOptions()) {
         val blocks: MutableList<Content> = mutableListOf(TextContent(text))
         if (!images.isNullOrEmpty()) blocks.addAll(images)
         return listOf(
-            StandardAgentMessage(UserMessage(BlockContent(blocks), System.currentTimeMillis())),
+            StandardAgentMessage(UserMessage(BlockContent(blocks), platformCurrentTimeMillis())),
         )
     }
 
@@ -322,7 +322,7 @@ class Agent(options: AgentOptions = AgentOptions()) {
             usage = Usage.empty(),
             stopReason = if (aborted) StopReason.Aborted else StopReason.Error,
             errorMessage = error.message ?: error.toString(),
-            timestamp = System.currentTimeMillis(),
+            timestamp = platformCurrentTimeMillis(),
         )
         val agentMessage = StandardAgentMessage(message)
         processEvents(AgentEvent.MessageStart(agentMessage))
@@ -391,13 +391,13 @@ class Agent(options: AgentOptions = AgentOptions()) {
         fun peek(): List<AgentMessage> = synchronized(this) {
             when (mode) {
                 QueueMode.All -> messages.toList()
-                QueueMode.OneAtATime -> listOfNotNull(messages.peekFirst())
+                QueueMode.OneAtATime -> listOfNotNull(messages.firstOrNull())
             }
         }
 
         fun drain(): List<AgentMessage> = synchronized(this) {
             val drained = peek()
-            repeat(drained.size) { messages.pollFirst() }
+            repeat(drained.size) { messages.removeFirstOrNull() }
             drained
         }
 

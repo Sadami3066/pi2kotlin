@@ -14,7 +14,7 @@ kotlin {
     }
 
     jvm()
-    jvmToolchain(21)
+    jvmToolchain(17)
 
     sourceSets {
         val unixMain = create("unixMain")

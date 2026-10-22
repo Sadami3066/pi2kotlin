@@ -4,10 +4,10 @@ import dev.pi.ai.auth.AuthOverrides
 import dev.pi.ai.auth.AuthResolver
 import dev.pi.ai.auth.CredentialStore
 import dev.pi.ai.auth.OAuthCredential as StoredOAuthCredential
+import dev.pi.ai.auth.ProviderAuthResolver
 import dev.pi.ai.auth.ResolvedAuth
+import dev.pi.ai.auth.refreshStoredOAuthCredential
 import dev.pi.ai.http.HttpTransport
-
-private const val OAUTH_MINIMUM_VALIDITY_MS = 5 * 60 * 1000L
 
 fun bundledOAuthFlows(): Map<String, OAuthAuth> = mapOf(
     "anthropic" to anthropicOAuth,
@@ -61,24 +61,15 @@ class OAuthAuthResolver(
     private val store: CredentialStore,
     private val transport: HttpTransport,
 ) : AuthResolver {
-    override suspend fun resolve(overrides: AuthOverrides?): ResolvedAuth? {
-        overrides?.apiKey?.let { return ResolvedAuth(it, source = "stored credential") }
-        val stored = loadOAuthCredential(providerId, store) ?: return null
-        val credential = if (stored.expires <= oauthNowMillis() + OAUTH_MINIMUM_VALIDITY_MS) {
-            refreshCredential(stored)
-        } else {
-            stored
-        }
-        return flow.toAuth(credential)
-    }
+    private val delegate = ProviderAuthResolver(
+        providerId = providerId,
+        store = store,
+        oauthFlow = flow,
+        transport = transport,
+    )
 
-    suspend fun refreshCredential(credential: OAuthCredential): OAuthCredential {
-        val refreshed = try {
-            flow.refresh(credential, transport)
-        } catch (error: Throwable) {
-            throw IllegalStateException("OAuth refresh failed for $providerId", error)
-        }
-        saveOAuthCredential(providerId, store, refreshed)
-        return refreshed
-    }
+    override suspend fun resolve(overrides: AuthOverrides?): ResolvedAuth? = delegate.resolve(overrides)
+
+    suspend fun refreshCredential(credential: OAuthCredential): OAuthCredential =
+        refreshStoredOAuthCredential(providerId, flow, credential, store, transport)
 }

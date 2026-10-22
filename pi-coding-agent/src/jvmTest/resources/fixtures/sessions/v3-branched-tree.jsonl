@@ -1,0 +1,7 @@
+{"type":"session","version":3,"id":"fixture-branched","timestamp":"2026-01-08T00:00:00.000Z","cwd":"/work/project"}
+{"type":"message","id":"f5000001","parentId":null,"timestamp":"2026-01-08T00:00:01.000Z","message":{"role":"user","content":"root","timestamp":1000}}
+{"type":"message","id":"f5000002","parentId":"f5000001","timestamp":"2026-01-08T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"first answer"}],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0.0,"output":0.0,"cacheRead":0.0,"cacheWrite":0.0,"total":0.0}},"stopReason":"stop","timestamp":2000}}
+{"type":"message","id":"f5000003","parentId":"f5000002","timestamp":"2026-01-08T00:00:03.000Z","message":{"role":"user","content":"branch a","timestamp":3000}}
+{"type":"message","id":"f5000004","parentId":"f5000002","timestamp":"2026-01-08T00:00:04.000Z","message":{"role":"user","content":"branch b","timestamp":4000}}
+{"type":"label","id":"f5000005","parentId":"f5000004","timestamp":"2026-01-08T00:00:05.000Z","targetId":"f5000001","label":"root-label"}
+{"type":"session_info","id":"f5000006","parentId":"f5000005","timestamp":"2026-01-08T00:00:06.000Z","name":"branched"}

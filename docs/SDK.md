@@ -10,7 +10,9 @@ dependencies {
 }
 ```
 
-模块：`pi-ai`（LLM 统一层）→ `pi-agent`（agent 循环）→ `pi-coding-agent`（会话/工具/提示词/SDK 门面）。targets：Android（minSdk 26）+ JVM（17+）。
+Android 使用 `dev.pi:pi-coding-agent-android:0.1.0`。产物暂未发布到 Maven Central，先执行 `./gradlew publishToMavenLocal`。
+
+模块：`pi-ai`（LLM 统一层）→ `pi-agent`（agent 循环）→ `pi-coding-agent`（会话/工具/提示词/SDK 门面）。targets：Android（minSdk 26）+ JVM（Java 17 字节码）。
 
 ## 快速开始
 

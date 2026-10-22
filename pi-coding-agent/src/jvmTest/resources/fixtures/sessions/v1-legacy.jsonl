@@ -1,0 +1,4 @@
+{"type":"session","id":"fixture-v1","timestamp":"2026-01-06T00:00:00.000Z","cwd":"/work/project"}
+{"type":"message","timestamp":"2026-01-06T00:00:01.000Z","message":{"role":"user","content":"legacy hello","timestamp":1000}}
+{"type":"compaction","timestamp":"2026-01-06T00:00:02.000Z","summary":"legacy summary","firstKeptEntryIndex":1,"tokensBefore":5}
+{"type":"message","timestamp":"2026-01-06T00:00:03.000Z","message":{"role":"assistant","content":[{"type":"text","text":"legacy hi"}],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0.0,"output":0.0,"cacheRead":0.0,"cacheWrite":0.0,"total":0.0}},"stopReason":"stop","timestamp":2000}}

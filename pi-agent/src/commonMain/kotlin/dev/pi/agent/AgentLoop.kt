@@ -1,5 +1,6 @@
 package dev.pi.agent
 
+import dev.pi.ai.platform.platformCurrentTimeMillis
 import dev.pi.ai.AssistantMessage
 import dev.pi.ai.AssistantMessageEvent
 import dev.pi.ai.ClientIdentity
@@ -314,7 +315,7 @@ private fun declareToolChanges(context: AgentContext, pendingMessages: List<Agen
         }
     }
     if (unchanged) return pendingMessages
-    val update = withToolChanges(SystemMessage(content = PlainTextContent(""), timestamp = System.currentTimeMillis()), changes)
+    val update = withToolChanges(SystemMessage(content = PlainTextContent(""), timestamp = platformCurrentTimeMillis()), changes)
     val insertIndex = pendingMessages.indexOfFirst { it.role != "system" }
     val index = if (insertIndex == -1) pendingMessages.size else insertIndex
     return pendingMessages.take(index) + StandardAgentMessage(update) + pendingMessages.drop(index)
@@ -706,7 +707,7 @@ private fun createToolResultMessage(finalized: FinalizedToolCall): ToolResultArt
         details = finalized.result.details,
         usage = finalized.result.usage,
         isError = finalized.isError,
-        timestamp = System.currentTimeMillis(),
+        timestamp = platformCurrentTimeMillis(),
         durationMs = finalized.durationMs,
     )
     return ToolResultArtifact(message, StandardAgentMessage(message))

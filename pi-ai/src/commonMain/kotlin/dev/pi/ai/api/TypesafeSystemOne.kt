@@ -1,5 +1,6 @@
 package dev.pi.ai.api
 
+import dev.pi.ai.platform.platformCurrentTimeMillis
 import dev.pi.ai.ClassifierAnswer
 import dev.pi.ai.ClassifierBoolAnswer
 import dev.pi.ai.ClassifierBoolQuestion
@@ -64,7 +65,7 @@ internal suspend fun classifySystemOne(
     context: ClassifierContext,
     options: ClassifierOptions,
 ): ClassifierResult {
-    val timestamp = System.currentTimeMillis()
+    val timestamp = platformCurrentTimeMillis()
     var usage: Usage? = null
     try {
         if (model.api != systemOneTransport.api) {

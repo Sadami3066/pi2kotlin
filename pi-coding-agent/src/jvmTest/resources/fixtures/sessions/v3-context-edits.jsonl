@@ -1,0 +1,11 @@
+{"type":"session","version":3,"id":"fixture-context-edits","timestamp":"2026-01-03T00:00:00.000Z","cwd":"/work/project"}
+{"type":"message","id":"f1000001","parentId":null,"timestamp":"2026-01-03T00:00:01.000Z","message":{"role":"system","content":"sys prompt","timestamp":0}}
+{"type":"message","id":"f1000002","parentId":"f1000001","timestamp":"2026-01-03T00:00:02.000Z","message":{"role":"user","content":"user one","timestamp":1000}}
+{"type":"message","id":"f1000003","parentId":"f1000002","timestamp":"2026-01-03T00:00:03.000Z","message":{"role":"assistant","content":[{"type":"text","text":"assistant one"}],"api":"anthropic-messages","provider":"anthropic","model":"claude-sonnet-4-5","usage":{"input":1,"output":1,"cacheRead":0,"cacheWrite":0,"totalTokens":2,"cost":{"input":0.0,"output":0.0,"cacheRead":0.0,"cacheWrite":0.0,"total":0.0}},"stopReason":"stop","timestamp":2000}}
+{"type":"message","id":"f1000004","parentId":"f1000003","timestamp":"2026-01-03T00:00:04.000Z","message":{"role":"toolResult","toolCallId":"call_1","toolName":"bash","content":[{"type":"text","text":"tool out"}],"isError":false,"timestamp":2500}}
+{"type":"custom_message","id":"f1000005","parentId":"f1000004","timestamp":"2026-01-03T00:00:05.000Z","customType":"ext","content":[{"type":"text","text":"custom one"}],"display":true}
+{"type":"context_edit","id":"f1000006","parentId":"f1000005","timestamp":"2026-01-03T00:00:06.000Z","targetId":"f1000003","replacement":{"content":[{"type":"text","text":"assistant edited"}]}}
+{"type":"context_edit","id":"f1000007","parentId":"f1000006","timestamp":"2026-01-03T00:00:07.000Z","targetId":"f1000004","replacement":null}
+{"type":"context_edit","id":"f1000008","parentId":"f1000007","timestamp":"2026-01-03T00:00:08.000Z","targetId":"f1000005","replacement":{"content":"custom edited"}}
+{"type":"context_edit","id":"f1000009","parentId":"f1000008","timestamp":"2026-01-03T00:00:09.000Z","targetId":"f1000001","replacement":{"content":[{"type":"text","text":"system edited"}]}}
+{"type":"message","id":"f100000a","parentId":"f1000009","timestamp":"2026-01-03T00:00:10.000Z","message":{"role":"user","content":"user two","timestamp":3000}}

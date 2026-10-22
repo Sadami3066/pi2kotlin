@@ -1,5 +1,6 @@
 package dev.pi.ai.api
 
+import dev.pi.ai.platform.platformCurrentTimeMillis
 import dev.pi.ai.AssistantMessage
 import dev.pi.ai.BlockContent
 import dev.pi.ai.Content
@@ -309,4 +310,4 @@ internal fun getDeclaredTools(messages: List<Message>): List<Tool> {
     return definitions.values.toList()
 }
 
-internal fun nowMillis(): Long = System.currentTimeMillis()
+internal fun nowMillis(): Long = platformCurrentTimeMillis()

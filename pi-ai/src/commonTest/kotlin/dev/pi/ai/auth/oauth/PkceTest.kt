@@ -2,6 +2,7 @@ package dev.pi.ai.auth.oauth
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class PkceTest {
     @Test
@@ -38,6 +39,18 @@ class PkceTest {
         assertEquals("_w", base64UrlEncode(byteArrayOf(0xFF.toByte())))
         assertEquals("AQID", base64UrlEncode(byteArrayOf(1, 2, 3)))
         assertEquals("", base64UrlEncode(ByteArray(0)))
+    }
+
+    @Test
+    fun generatePkceUsesPlatformSecureRandomByDefault() {
+        val first = generatePkce()
+        val second = generatePkce()
+        assertEquals(43, first.verifier.length)
+        assertEquals(43, first.challenge.length)
+        assertEquals(sha256Base64Url(first.verifier), first.challenge)
+        assertTrue(first.verifier != second.verifier)
+        assertTrue(first.challenge != second.challenge)
+        assertTrue(first.verifier.all { it.isLetterOrDigit() || it == '-' || it == '_' })
     }
 
     @Test

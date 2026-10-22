@@ -9,7 +9,7 @@ pi2kotlin 是一个用于构建**手机 agent 应用**的 Kotlin Multiplatform S
 | 项 | 选择 | 理由 |
 |---|---|---|
 | 形态 | Kotlin Multiplatform 库 | Android 为主，JVM 用于测试/服务端；iOS 可后续加 target |
-| targets | `androidTarget`（minSdk 26）+ `jvm`（JDK 17） | 手机 agent 应用 + JVM 测试/桌面复用 |
+| targets | `androidTarget`（minSdk 26）+ `jvm`（JDK 17） | 手机 agent 应用 + JVM 测试/桌面复用；iOS 尚未接入（新增 target 需补 `dev.pi.ai.platform` actual 与平台 HTTP/文件实现） |
 | 构建 | Gradle 9.8.2 + Kotlin 2.4.21 + AGP 9.x | 现有工程已就绪 |
 | JSON | kotlinx.serialization | KMP 原生，sealed 判别键与上游 JSON 一致 |
 | 并发/流式 | kotlinx.coroutines（Flow + Channel） | KMP 原生；对应上游 async iterator/Promise |
@@ -34,11 +34,13 @@ pi-coding-agent/  Coding agent SDK：AgentSession、会话持久化、设置、�
 ```
 src/commonMain/kotlin/      纯 Kotlin 逻辑与类型（全部协议解析、agent 逻辑、校验、压缩…）
 src/commonTest/kotlin/      共享测试
-src/jvmMain/kotlin/         JVM 平台实现（OkHttp 传输、文件、凭据）
-src/androidMain/kotlin/     Android 平台实现
+src/jvmMain/kotlin/         JVM 平台实现（OkHttp 传输、文件、凭据、dev.pi.ai.platform actual）
+src/androidMain/kotlin/     Android 平台实现（同上）
 ```
 
-平台边界收敛为少量 expect/actual 或接口注入：`HttpTransport`、`FileSystem`、`CredentialStore`、`Clock`、`ModelCatalogSource`。构造 `PiClient`/`AgentSession` 时注入；默认工厂在平台源集里提供（Android 默认 OkHttp + 应用私有目录）。
+平台边界收敛为 `dev.pi.ai.platform` 的 expect/actual（`platformCurrentTimeMillis`、`platformSecureRandomBytes`、`platformEnv`、`PlatformAtomicBoolean`，actual 已在 `pi-ai/src/jvmMain` 与 `pi-ai/src/androidMain`，pi-agent 经 `api(project(":pi-ai"))` 复用），以及接口注入（`HttpTransport`、`FileSystem`、`CredentialStore`、`ModelCatalogSource`）。构造 `PiClient`/`AgentSession` 时注入；默认工厂在平台源集里提供（Android 默认 OkHttp + 应用私有目录）。
+
+当前 targets 仅 android + jvm。OS 相关差异只允许出现在 `dev.pi.ai.platform` 与各平台源集；`commonMain` 不使用 `java.*`/`javax.*`/`System.*`。耗时测量直接使用 `kotlin.time.TimeSource.Monotonic`，不进入平台抽象。新增 iOS target 时必须为上述 expect 补齐 actual（否则 commonMain 无法编译），并补平台 HTTP/文件实现；当前不声称已支持 iOS。
 
 ## 关键设计
 
@@ -84,7 +86,8 @@ utils          partial JSON、transcript 规范化、JSON Schema 校验、usage/
 
 ## 移动端约束
 
-- `commonMain` 禁止 `java.*`、`System.getenv`、`ProcessBuilder`、`File` 等 JVM-only API。
+- `commonMain` 禁止 `java.*`/`javax.*` import 与 `System.*`：墙钟用 `platformCurrentTimeMillis()`、耗时用 `kotlin.time.TimeSource.Monotonic`、随机数用 `platformSecureRandomBytes()`、环境变量用 `platformEnv()`、原子布尔用 `PlatformAtomicBoolean`。
+- okio `FileSystem.SYSTEM` 属于 okio 跨平台 API（JVM/Android/Native 可用）；新增 JS/Wasm target 时需替换。
 - 凭据存储：默认实现可注入；Android 上由宿主决定是否用 Keystore 加密。
 - 存储根目录：构造时传入（Android 默认 app 私有目录），不写死 `~/.pi`。
 - 依赖体积：只保留 coroutines/serialization/okio + 平台 HTTP 实现；不引入大 SDK。

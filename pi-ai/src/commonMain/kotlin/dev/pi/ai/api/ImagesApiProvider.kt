@@ -1,5 +1,6 @@
 package dev.pi.ai.api
 
+import dev.pi.ai.platform.platformCurrentTimeMillis
 import dev.pi.ai.AnyModel
 import dev.pi.ai.AssistantImages
 import dev.pi.ai.ClientIdentity
@@ -45,7 +46,7 @@ internal fun imageErrorResult(model: ImageModel, error: Throwable): AssistantIma
     output = emptyList(),
     stopReason = ImagesStopReason.Error,
     errorMessage = error.message ?: error.toString(),
-    timestamp = System.currentTimeMillis(),
+    timestamp = platformCurrentTimeMillis(),
 )
 
 internal fun providerIdentityHeaders(model: AnyModel, identity: ClientIdentity?): MutableMap<String, String> {

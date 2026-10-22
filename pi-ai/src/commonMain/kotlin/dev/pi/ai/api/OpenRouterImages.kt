@@ -1,5 +1,6 @@
 package dev.pi.ai.api
 
+import dev.pi.ai.platform.platformCurrentTimeMillis
 import dev.pi.ai.AssistantImages
 import dev.pi.ai.ImageContent
 import dev.pi.ai.ImageModel
@@ -24,7 +25,7 @@ class OpenRouterImagesApi(internal val transport: HttpTransport) : ImagesApiProv
         context: ImagesContext,
         options: ImagesOptions,
     ): AssistantImages {
-        val timestamp = System.currentTimeMillis()
+        val timestamp = platformCurrentTimeMillis()
         try {
             val apiKey = options.apiKey ?: throw IllegalStateException("No API key for provider: ${model.provider}")
             val headers = buildHeaders(model, options, apiKey)

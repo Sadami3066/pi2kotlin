@@ -3,33 +3,38 @@ package dev.pi.coding
 import dev.pi.agent.Agent
 import dev.pi.agent.AgentInitialState
 import dev.pi.agent.AgentOptions
+import dev.pi.agent.QueueMode
 import dev.pi.agent.StreamFn
 import dev.pi.agent.asAgentMessage
 import dev.pi.agent.asLlmMessage
+import dev.pi.ai.CacheRetention
 import dev.pi.ai.Context
 import dev.pi.ai.PlainTextContent
+import dev.pi.ai.SimpleStreamOptions
+import dev.pi.ai.StreamOptions
 import dev.pi.ai.SystemMessage
 import dev.pi.ai.auth.CredentialStore
+import dev.pi.ai.auth.fileCredentialStore
 import dev.pi.ai.http.HttpTransport
+import dev.pi.ai.platform.platformCurrentTimeMillis
+import dev.pi.coding.compaction.GenerateBranchSummaryOptions
+import dev.pi.coding.compaction.collectEntriesForBranchSummary
+import dev.pi.coding.compaction.generateBranchSummary
 import dev.pi.coding.models.CustomModelsLoader
 import dev.pi.coding.models.ModelResolver
 import dev.pi.coding.models.ModelRuntime
 import dev.pi.coding.models.ProviderComposer
 import dev.pi.coding.paths.AgentPaths
+import dev.pi.coding.prompt.LoadedResources
 import dev.pi.coding.prompt.ResourceLoader
 import dev.pi.coding.prompt.SystemPromptInput
 import dev.pi.coding.prompt.SystemPromptSections
 import dev.pi.coding.prompt.buildSystemPrompt
-import dev.pi.ai.CacheRetention
-import dev.pi.ai.SimpleStreamOptions
-import dev.pi.ai.StreamOptions
-import dev.pi.coding.compaction.GenerateBranchSummaryOptions
-import dev.pi.coding.compaction.collectEntriesForBranchSummary
-import dev.pi.coding.compaction.generateBranchSummary
 import dev.pi.coding.session.AgentSession
 import dev.pi.coding.session.CodingHooks
 import dev.pi.coding.session.SessionManager
 import dev.pi.coding.settings.SettingsManager
+import dev.pi.coding.settings.TrustManager
 import dev.pi.coding.tools.CodingTool
 import dev.pi.coding.tools.FileMutationQueue
 import dev.pi.coding.tools.ShellExecutor
@@ -55,13 +60,17 @@ data class AgentSessionOptions(
     val providers: List<dev.pi.ai.Provider> = emptyList(),
     val env: Map<String, String> = emptyMap(),
     val extraSystemPromptSections: Map<String, String> = emptyMap(),
+    val projectTrusted: Boolean? = null,
 )
 
 suspend fun createAgentSession(options: AgentSessionOptions): AgentSession {
     val paths = AgentPaths(options.cwd, options.agentDir)
     val settings = SettingsManager.forPaths(paths, options.fs)
+    val trusted = options.projectTrusted ?: TrustManager(paths.trustFile, options.fs)
+        .resolveTrusted(options.cwd, settings.getDefaultProjectTrust())
+    settings.setProjectTrusted(trusted)
     settings.reload()
-    val credentialStore = options.credentials ?: CredentialStore(options.agentDir, options.fs)
+    val credentialStore = options.credentials ?: fileCredentialStore(options.agentDir, options.fs)
 
     val customModelsText = if (options.fs.exists(paths.modelsFile)) {
         options.fs.read(paths.modelsFile) { readUtf8() }
@@ -92,68 +101,73 @@ suspend fun createAgentSession(options: AgentSessionOptions): AgentSession {
         enabledModels = settings.getEnabledModels(),
     )
 
-    val resolvedFromSession = sessionContext.provider?.let { provider ->
+    val explicitResolved = options.model?.let { resolver.resolve(it) }
+    val restoredModel = sessionContext.provider?.let { provider ->
         sessionContext.modelId?.let { modelId -> modelRuntime.getModel(provider, modelId) }
     }
-    val model = resolvedFromSession
-        ?: options.model?.let { resolver.resolve(it).model }
+    val model = explicitResolved?.model
+        ?: restoredModel
         ?: resolver.resolveDefault()?.model
         ?: throw IllegalStateException(
             "No model configured. Pass AgentSessionOptions.model or set settings defaultProvider/defaultModel.",
         )
-    val thinkingLevel = options.thinkingLevel
-        ?: sessionContext.thinkingLevel
+    val thinkingLevel: String = options.thinkingLevel
+        ?: explicitResolved?.thinkingLevel
+        ?: (if (options.model == null) sessionContext.thinkingLevel else null)
+        ?: settings.getModelThinkingLevel(model.provider, model.id)
         ?: settings.getDefaultThinkingLevel()
         ?: "off"
 
+    if (sessionManager.getEntries().isEmpty()) {
+        sessionManager.appendModelChange(model.provider, model.id)
+        sessionManager.appendThinkingLevelChange(thinkingLevel)
+    }
+
     val resources = ResourceLoader(paths, options.fs, settings).reload()
+    val defaultToolNames = settings.getDefaultTools().toSet()
     val tools = options.tools ?: defaultCodingTools(
         cwd = options.cwd,
         fs = options.fs,
         mutationQueue = FileMutationQueue(),
         shellExecutor = options.shellExecutor,
-    )
-
-    val extraSections = options.extraSystemPromptSections
-    val builtSections = buildSystemPrompt(
-        SystemPromptInput(
-            preamble = resources.systemPromptOverride,
-            toolSnippets = tools.mapNotNull { tool -> tool.promptSnippet?.let { "${tool.name}: $it" } },
-            toolGuidelines = tools.flatMap { it.promptGuidelines.orEmpty() },
-            docsPaths = emptyList(),
-            addendum = resources.appendSystemPrompt,
-            projectInstructions = resources.contextFiles,
-            skills = resources.skills,
-            cwd = options.cwd,
-        ),
-    )
-    val sections = if (extraSections.isEmpty()) {
-        builtSections
-    } else {
-        SystemPromptSections(builtSections.sections + extraSections)
-    }
-
-    val restored = sessionContext.messages.map { it.asAgentMessage() }.toMutableList()
+    ).filter { it.name in defaultToolNames }
     val agentTools = tools.map { it.asAgentTool() }
+
+    val freshSections = buildFreshSections(options, resources, tools)
+    val restored = sessionContext.messages.map { it.asAgentMessage() }.toMutableList()
+    val replayedSections = replaySystemSections(restored)
+    val initialSections = if (replayedSections.isEmpty()) {
+        freshSections
+    } else {
+        SystemPromptSections(replayedSections)
+    }
     if (restored.firstOrNull()?.asLlmMessage() !is SystemMessage) {
-        restored.add(
-            0,
-            SystemMessage(
-                content = PlainTextContent(""),
-                sections = sections.sections,
-                toolsAdded = agentTools.map { it.toTool() },
-                timestamp = 0,
-            ).asAgentMessage(),
+        val initialSystem = SystemMessage(
+            content = PlainTextContent(""),
+            sections = initialSections.sections,
+            toolsAdded = agentTools.map { it.toTool() },
+            timestamp = platformCurrentTimeMillis(),
         )
+        sessionManager.appendMessage(initialSystem)
+        restored.add(0, initialSystem.asAgentMessage())
     }
 
+    val providerRetry = settings.getProviderRetrySettings()
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     val streamFn: StreamFn = { requestedModel, transcript, streamOptions ->
+        val base = streamOptions ?: SimpleStreamOptions()
+        val enriched = base.copy(
+            stream = base.stream.copy(
+                maxRetries = base.stream.maxRetries ?: providerRetry.maxRetries?.toInt(),
+                maxRetryDelayMs = base.stream.maxRetryDelayMs ?: providerRetry.maxRetryDelayMs,
+                timeoutMs = base.stream.timeoutMs ?: providerRetry.timeoutMs,
+            ),
+        )
         modelRuntime.streamSimple(
             model = requestedModel,
             context = Context(messages = transcript.messages),
-            options = streamOptions,
-            signal = streamOptions?.stream?.signal,
+            options = enriched,
+            signal = enriched.stream.signal,
         )
     }
     val agent = Agent(
@@ -165,13 +179,11 @@ suspend fun createAgentSession(options: AgentSessionOptions): AgentSession {
                 tools = agentTools,
             ),
             streamFn = streamFn,
+            steeringMode = parseQueueMode(settings.getSteeringMode()),
+            followUpMode = parseQueueMode(settings.getFollowUpMode()),
+            maxRetryDelayMs = providerRetry.maxRetryDelayMs,
         ),
     )
-
-    if (sessionManager.getEntries().isEmpty()) {
-        sessionManager.appendModelChange(model.provider, model.id)
-        sessionManager.appendThinkingLevelChange(thinkingLevel)
-    }
 
     val session = AgentSession(
         cwd = options.cwd,
@@ -183,7 +195,8 @@ suspend fun createAgentSession(options: AgentSessionOptions): AgentSession {
         hooks = options.hooks,
         agent = agent,
         toolSet = tools,
-        initialSections = sections,
+        initialSections = initialSections,
+        staticSystemPromptSections = options.extraSystemPromptSections,
         scope = scope,
     )
     session.start()
@@ -191,10 +204,50 @@ suspend fun createAgentSession(options: AgentSessionOptions): AgentSession {
     return session
 }
 
+private fun buildFreshSections(
+    options: AgentSessionOptions,
+    resources: LoadedResources,
+    tools: List<CodingTool>,
+): SystemPromptSections {
+    val built = buildSystemPrompt(
+        SystemPromptInput(
+            preamble = resources.systemPromptOverride,
+            toolSnippets = tools.mapNotNull { tool -> tool.promptSnippet?.let { "${tool.name}: $it" } },
+            toolGuidelines = tools.flatMap { it.promptGuidelines.orEmpty() },
+            docsPaths = emptyList(),
+            addendum = resources.appendSystemPrompt,
+            projectInstructions = resources.contextFiles,
+            skills = resources.skills,
+            cwd = options.cwd,
+        ),
+    )
+    return if (options.extraSystemPromptSections.isEmpty()) {
+        built
+    } else {
+        SystemPromptSections(built.sections + options.extraSystemPromptSections)
+    }
+}
+
+private fun replaySystemSections(messages: List<dev.pi.agent.AgentMessage>): Map<String, String> {
+    val sections = LinkedHashMap<String, String>()
+    for (message in messages) {
+        val system = message.asLlmMessage() as? SystemMessage ?: continue
+        system.sections?.forEach { (key, value) ->
+            if (value == null) sections.remove(key) else sections[key] = value
+        }
+    }
+    return sections
+}
+
+private fun parseQueueMode(value: String): QueueMode = when (value.lowercase()) {
+    "all" -> QueueMode.All
+    else -> QueueMode.OneAtATime
+}
+
 class AgentSessionRuntime private constructor(
     private val options: AgentSessionOptions,
     initial: AgentSession,
-) : AutoCloseable {
+) {
     var session: AgentSession = initial
         private set
 
@@ -227,6 +280,10 @@ class AgentSessionRuntime private constructor(
         source.close()
         session = createAgentSession(options.copy(sessionFile = file))
         return session
+    }
+
+    suspend fun close() {
+        session.close()
     }
 
     private suspend fun appendBranchSummary(
@@ -263,9 +320,5 @@ class AgentSessionRuntime private constructor(
             details = details,
             usage = result.usage,
         )
-    }
-
-    override fun close() {
-        session.abort()
     }
 }

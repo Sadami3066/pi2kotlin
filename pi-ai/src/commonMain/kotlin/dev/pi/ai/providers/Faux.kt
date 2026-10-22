@@ -1,5 +1,6 @@
 package dev.pi.ai.providers
 
+import dev.pi.ai.platform.platformCurrentTimeMillis
 import dev.pi.ai.AssistantMessage
 import dev.pi.ai.AssistantMessageEventStream
 import dev.pi.ai.BlockContent
@@ -118,7 +119,7 @@ fun fauxAssistantMessage(
     stopReason: StopReason = StopReason.Stop,
     errorMessage: String? = null,
     responseId: String? = null,
-    timestamp: Long = System.currentTimeMillis(),
+    timestamp: Long = platformCurrentTimeMillis(),
 ): AssistantMessage = fauxAssistantMessage(
     content = listOf(fauxText(content)),
     stopReason = stopReason,
@@ -132,7 +133,7 @@ fun fauxAssistantMessage(
     stopReason: StopReason = StopReason.Stop,
     errorMessage: String? = null,
     responseId: String? = null,
-    timestamp: Long = System.currentTimeMillis(),
+    timestamp: Long = platformCurrentTimeMillis(),
 ): AssistantMessage = AssistantMessage(
     content = content.toMutableList(),
     api = DEFAULT_API,
@@ -439,7 +440,7 @@ private fun createErrorMessage(error: Throwable, api: String, provider: String, 
         usage = Usage.empty(),
         stopReason = StopReason.Error,
         errorMessage = error.message ?: error.toString(),
-        timestamp = System.currentTimeMillis(),
+        timestamp = platformCurrentTimeMillis(),
     )
 
 private fun withUsageEstimate(
@@ -553,4 +554,4 @@ private fun commonPrefixLength(a: String, b: String): Int {
 }
 
 private fun randomId(prefix: String): String =
-    "$prefix:${System.currentTimeMillis()}:${Random.nextInt(1_000_000)}"
+    "$prefix:${platformCurrentTimeMillis()}:${Random.nextInt(1_000_000)}"

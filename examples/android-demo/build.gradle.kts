@@ -29,6 +29,6 @@ kotlin {
 }
 
 dependencies {
-    implementation("dev.pi:pi-coding-agent-android:0.1.0-SNAPSHOT")
+    implementation("dev.pi:pi-coding-agent-android:0.1.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 }

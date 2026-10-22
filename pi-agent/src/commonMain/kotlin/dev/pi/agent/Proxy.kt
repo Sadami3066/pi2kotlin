@@ -1,5 +1,6 @@
 package dev.pi.agent
 
+import dev.pi.ai.platform.platformCurrentTimeMillis
 import dev.pi.ai.AssistantMessage
 import dev.pi.ai.AssistantMessageEvent
 import dev.pi.ai.AssistantMessageEventStream
@@ -197,7 +198,7 @@ private fun createPartialAssistantMessage(model: Model): AssistantMessage = Assi
     model = model.id,
     usage = Usage.empty(),
     stopReason = StopReason.Pending,
-    timestamp = System.currentTimeMillis(),
+    timestamp = platformCurrentTimeMillis(),
 )
 
 private fun buildProxyRequestBody(

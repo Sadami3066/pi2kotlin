@@ -4,6 +4,7 @@
 
     <application
         android:allowBackup="false"
+        android:usesCleartextTraffic="true"
         android:label="pi2kotlin demo"
         android:supportsRtl="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
