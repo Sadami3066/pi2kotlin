@@ -1,25 +1,29 @@
 plugins {
-    alias(libs.plugins.kotlin.jvm)
-    application
+    alias(libs.plugins.kotlin.multiplatform)
+    alias(libs.plugins.android.kmp.library)
 }
 
 kotlin {
+    android {
+        namespace = "dev.pi.coding"
+        compileSdk = 36
+        minSdk = 26
+        withHostTest {}
+    }
+
+    jvm()
     jvmToolchain(21)
+
+    sourceSets {
+        commonMain.dependencies {
+            api(project(":pi-agent"))
+            api(libs.okio)
+        }
+
+        commonTest.dependencies {
+            implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.test)
+        }
+    }
 }
 
-dependencies {
-    implementation(project(":pi-ai"))
-    implementation(project(":pi-agent"))
-
-    testImplementation(libs.kotlin.test.junit5)
-    testImplementation(libs.kotlinx.coroutines.test)
-    testRuntimeOnly(libs.junit.platform.launcher)
-}
-
-application {
-    mainClass.set("dev.pi.coding.MainKt")
-}
-
-tasks.test {
-    useJUnitPlatform()
-}

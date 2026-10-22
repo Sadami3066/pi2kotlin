@@ -3,7 +3,7 @@ set -euo pipefail
 
 VERSION="${1:-1.3.0}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-DEST="$ROOT/pi-ai/src/main/resources/models"
+DEST="$ROOT/data/model-catalog"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -17,4 +17,5 @@ cp "$WORK/package/dist/providers/data/.manifest.json" "$DEST/manifest.json"
 cd "$DEST"
 ls *.json | grep -v '^manifest\.json$' | sort > index.txt
 
-echo "vendored pi-ai $VERSION model catalog: $(wc -l < index.txt) providers, $(du -sh . | cut -f1)"
+cd "$ROOT"
+python3 scripts/generate-catalog.py

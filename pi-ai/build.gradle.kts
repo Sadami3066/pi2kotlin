@@ -1,22 +1,45 @@
 plugins {
-    alias(libs.plugins.kotlin.jvm)
+    alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.android.kmp.library)
 }
 
 kotlin {
+    android {
+        namespace = "dev.pi.ai"
+        compileSdk = 36
+        minSdk = 26
+        withHostTest {}
+    }
+
+    jvm()
     jvmToolchain(21)
-}
 
-dependencies {
-    api(libs.kotlinx.serialization.json)
-    api(libs.kotlinx.coroutines.core)
-    implementation(libs.okhttp)
+    sourceSets {
+        val okhttpMain = create("okhttpMain")
+        okhttpMain.dependsOn(commonMain.get())
 
-    testImplementation(libs.kotlin.test.junit5)
-    testImplementation(libs.kotlinx.coroutines.test)
-    testRuntimeOnly(libs.junit.platform.launcher)
-}
+        jvmMain.get().dependsOn(okhttpMain)
+        androidMain.get().dependsOn(okhttpMain)
 
-tasks.test {
-    useJUnitPlatform()
+        commonMain.dependencies {
+            api(libs.kotlinx.serialization.json)
+            api(libs.kotlinx.coroutines.core)
+            api(libs.okio)
+        }
+
+        okhttpMain.dependencies {
+            implementation(libs.okhttp)
+        }
+
+        commonTest.dependencies {
+            implementation(libs.kotlin.test)
+            implementation(libs.kotlinx.coroutines.test)
+        }
+
+        jvmTest.get().dependsOn(commonTest.get())
+        jvmTest.dependencies {
+            implementation(libs.okhttp.mockwebserver)
+        }
+    }
 }
