@@ -8,9 +8,9 @@
 
 | 模块 | 对应上游 | 状态 |
 |---|---|---|
-| `pi-ai` | `packages/ai`（unified LLM API） | 开始 |
-| `pi-agent` | `packages/agent`（agent runtime） | 待开始 |
-| `pi-coding-agent` | `packages/coding-agent`（coding agent CLI） | 范围待定 |
+| `pi-ai` | `packages/ai`（unified LLM API，27.7k 行） | 基础设施完成，协议实现进行中 |
+| `pi-agent` | `packages/agent`（agent runtime，2.5k 行） | 规格已就绪，待实现 |
+| `pi-coding-agent` | `packages/coding-agent`（coding agent CLI，76k 行） | 范围待确认，推荐先做内核 |
 
 ## 构建
 
@@ -23,6 +23,6 @@
 
 ## 文档
 
-- `docs/ARCHITECTURE.md`：技术选型与模块架构
+- `docs/ARCHITECTURE.md`：技术选型与架构决策
 - `docs/PLAN.md`：里程碑与当前进度
-- `docs/analysis/`：上游源码分析（移植依据）
+- `docs/analysis/`：上游源码分析（4,400+ 行，移植依据）
