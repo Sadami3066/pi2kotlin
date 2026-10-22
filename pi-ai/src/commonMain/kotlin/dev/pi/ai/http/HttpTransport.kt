@@ -1,5 +1,6 @@
 package dev.pi.ai.http
 
+import dev.pi.ai.RunSignal
 import okio.BufferedSource
 
 class HttpRequest(
@@ -7,6 +8,8 @@ class HttpRequest(
     val url: String,
     val headers: Map<String, String> = emptyMap(),
     val body: ByteArray? = null,
+    val timeoutMs: Long? = null,
+    val signal: RunSignal? = null,
 )
 
 class HttpResponse(

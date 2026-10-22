@@ -72,6 +72,7 @@ typealias ResponseHook = (response: ProviderResponse, model: Model) -> Unit
 typealias ProviderStreamEventHook = (data: JsonValue, model: Model) -> Unit
 
 data class StreamOptions(
+    val signal: RunSignal? = null,
     val apiKey: String? = null,
     val telemetry: JsonValue? = null,
     val env: Map<String, String>? = null,
