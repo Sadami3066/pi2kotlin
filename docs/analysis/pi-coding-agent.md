@@ -1,6 +1,6 @@
 # pi-coding-agent 源码分析与 Kotlin 重写范围建议
 
-分析对象：`/home/whywood/.codex/private-references/pi/packages/coding-agent`（只读），版本 1.3.0。
+分析对象：`upstream pi checkout: packages/coding-agent`（只读），版本 1.3.0。
 配套文档：`docs/analysis/pi-coding-agent-formats.md`（与现有 pi 数据/协议兼容所需的精确格式）。
 
 本文所有结论均给出 `文件:行` 证据（路径相对 `packages/coding-agent/`）。源码规模按 `find src -name '*.ts' | xargs wc -l` 统计，共 **76,051 行 TypeScript**，另有 `docs/` **7,647 行**规格文档、`schemas/` 4 个 JSON Schema 文件。
@@ -281,7 +281,7 @@ dist/bundle/rpc-entry.js      <- package.json exports "./rpc-entry"
 - 提示词是一组**有名字、可独立替换的 section**（`SystemPromptSections`，`system-prompt.ts:51-56`）：`preamble`（无标签）、`tools`、`rules`、`docs`、`addendum`、`project_context`、`skills`、`cwd`，以及扩展自定义 section。除 `preamble` 外每个 section 包成 `<name>\n...\n</name>`（`system-prompt.ts:188-192`）。
 - 默认 preamble 固定一句话（`system-prompt.ts:155-156`）；`tools` 段来自每个工具的 `promptSnippet`（157-160）；`rules` 段来自工具 `promptGuidelines` + 全局规则（`buildRules`，88-125）；`docs` 段把 readme/docs/examples 路径塞给模型（162-169）。
 - 上下文文件以 `<project_instructions path="...">` 包裹（79-86）；skills 以 `<available_skills>` XML 列出 name/description/location（`core/skills.ts:358-388`）。
-- **增量更新机制**：每次请求前 `diffSystemPromptSections(previous, current)` 得到 patch，作为一条 `role:"system", content:"", sections:patch` 的消息追加；`null` 表示删除某 section（`system-prompt.ts:217-228`，`agent-session.ts:1743-1771`）。首次请求写入完整 sections + `toolsAdded`（真实会话证据见 `~/.pi/agent/sessions/--home-whywood-文档--/*.jsonl` 第 4 行）。工具集变化同样用 system message 的 `toolsAdded`/`toolsRemoved` 表达，回放即得当前状态。**Kotlin 版必须实现"回放 system messages 得到当前 prompt 与工具集"**，否则恢复会话会错。
+- **增量更新机制**：每次请求前 `diffSystemPromptSections(previous, current)` 得到 patch，作为一条 `role:"system", content:"", sections:patch` 的消息追加；`null` 表示删除某 section（`system-prompt.ts:217-228`，`agent-session.ts:1743-1771`）。首次请求写入完整 sections + `toolsAdded`（真实会话证据见 `~/.pi/agent/sessions/--home-user-workspace--/*.jsonl` 第 4 行）。工具集变化同样用 system message 的 `toolsAdded`/`toolsRemoved` 表达，回放即得当前状态。**Kotlin 版必须实现"回放 system messages 得到当前 prompt 与工具集"**，否则恢复会话会错。
 
 ---
 
@@ -440,7 +440,7 @@ TUI 耦合：每个工具的 `renderers/*.ts`（1,007 行）只被 interactive �
 | `sessions/` | 45 个项目目录；单会话 JSONL 以 v3 header 开头 | **双向兼容是硬要求**：Kotlin 写的会话要能被真 pi 打开，反之亦然 |
 | `mcp.json` | 4 个 server（1 个 URL+headers、2 个 stdio+exposure:deferred、1 个 OAuth） | 若不实现 MCP，必须忽略此文件而不是报错 |
 | `trust.json` | `{"/abs/path": true, ...}`（也允许 false/null） | 读：最近祖先命中即决定；写：与 pi 共存时不要互相覆盖 |
-| `skills/` | 软链到 `/home/whywood/agent-config/skills`（6 个 skill） | skills 加载必须跟随符号链接 |
+| `skills/` | 软链到 `/home/user/agent-config/skills`（6 个 skill） | skills 加载必须跟随符号链接 |
 | `prompts/` | 空 | — |
 | `bin/` | `fd`、`chrome-debug`、`qqmail` | fd 可直接复用；rg 用系统 `/usr/bin/rg` |
 | `keybindings.json` | 不存在 | 按默认键位实现即可 |

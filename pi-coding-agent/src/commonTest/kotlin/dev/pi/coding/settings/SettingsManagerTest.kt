@@ -16,7 +16,7 @@ import kotlin.test.assertTrue
 
 private const val GLOBAL = "/agent/settings.json"
 private const val PROJECT = "/work/.pi/settings.json"
-private const val REAL_SETTINGS = "/home/whywood/.pi/agent/settings.json"
+private const val REAL_SETTINGS = "/home/user/.pi/agent/settings.json"
 
 class SettingsManagerTest {
     private fun FakeFileSystem.putText(path: String, text: String) {

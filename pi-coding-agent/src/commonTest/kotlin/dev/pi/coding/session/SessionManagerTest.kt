@@ -80,9 +80,9 @@ class SessionManagerTest {
     @Test
     fun sessionFilePathUsesEncodedCwdAndSessionId() = runTest {
         val fs = FakeFileSystem()
-        val paths = AgentPaths("/home/whywood/文档".toPath(), "/home/whywood/.pi/agent".toPath())
+        val paths = AgentPaths("/home/user/workspace".toPath(), "/home/user/.pi/agent".toPath())
         val session = SessionManager.create(paths, fs)
-        assertEquals("--home-whywood-文档--", paths.sessionsForCwd().name)
+        assertEquals("--home-user-workspace--", paths.sessionsForCwd().name)
         val file = assertNotNull(session.sessionFile)
         assertEquals(paths.sessionsForCwd(), file.parent)
         assertTrue(file.name.endsWith(".jsonl"))
@@ -566,7 +566,7 @@ class SessionManagerTest {
     @Test
     fun readsRealPiSessionFileAndBuildsContext() = runTest {
         val realFs = FileSystem.SYSTEM
-        val sampleDir = "/home/whywood/.pi/agent/sessions/--home-whywood-project-pi--".toPath()
+        val sampleDir = "/home/user/.pi/agent/sessions/--home-user-project-pi--".toPath()
         if (!realFs.exists(sampleDir)) return@runTest
         val files = realFs.listOrNull(sampleDir)?.filter { it.name.endsWith(".jsonl") }.orEmpty()
         val file = files.minByOrNull { it.name } ?: return@runTest
@@ -574,7 +574,7 @@ class SessionManagerTest {
         if (!firstLine.contains("\"version\":3")) return@runTest
         val session = SessionManager.open(file, realFs)
         assertTrue(session.getEntries().isNotEmpty())
-        assertEquals("/home/whywood/project/pi", session.cwd.toString())
+        assertEquals("/home/user/project/pi", session.cwd.toString())
         val context = session.buildSessionContext()
         assertTrue(context.messages.isNotEmpty())
         assertTrue(session.getHeader().id.isNotEmpty())

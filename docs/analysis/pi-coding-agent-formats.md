@@ -84,7 +84,7 @@
 ```
 
 - 编码：`--` + (`cwd` 去掉开头 `/` 或 `\`，把 `/`、`\`、`:` 全部换成 `-`) + `--`（`src/core/session-manager.ts:589-593`）。
-  例：`/home/whywood/文档` → `--home-whywood-文档--`。
+  例：`/home/user/workspace` → `--home-user-workspace--`。
 - 文件名时间戳：`new Date().toISOString().replace(/[:.]/g,"-")`，例 `2026-10-22T01-40-58-902Z`（`session-manager.ts:1683-1685`）。
 - 会话 id：`uuidv7()`（`session-manager.ts:264-266`）。自定义 id 必须匹配 `^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$`（`session-manager.ts:268-274`）。
 - `--session-dir` / `PI_CODING_AGENT_SESSION_DIR` / `sessionDir` 可覆盖根目录；优先级 `--session-dir` > env > setting（`src/main.ts:691-696`）。
@@ -92,7 +92,7 @@
 真实样本（本机）：
 
 ```
-~/.pi/agent/sessions/--home-whywood-文档--/2026-10-22T01-40-58-902Z_01a16144-c396-7069-b1e0-072e1af0764b.jsonl
+~/.pi/agent/sessions/--home-user-workspace--/2026-10-22T01-40-58-902Z_01a16144-c396-7069-b1e0-072e1af0764b.jsonl
 ```
 
 ### 2.2 文件结构
@@ -109,7 +109,7 @@ line 2..n: SessionEntry（append 顺序，即写盘顺序，不保证与树路�
 ### 2.3 SessionHeader
 
 ```json
-{"type":"session","version":3,"id":"01a16144-c396-7069-b1e0-072e1af0764b","timestamp":"2026-10-22T01:40:58.902Z","cwd":"/home/whywood/文档"}
+{"type":"session","version":3,"id":"01a16144-c396-7069-b1e0-072e1af0764b","timestamp":"2026-10-22T01:40:58.902Z","cwd":"/home/user/workspace"}
 ```
 
 | 字段 | 类型 | 说明 |
@@ -149,7 +149,7 @@ coding-agent 扩展（`src/core/messages.ts:29-77`）：`bashExecution`、`custo
 **SystemMessage**（`core/messages.ts` 用 pi-ai 类型；真实样本第 4 行）：
 
 ```json
-{"role":"system","content":"","sections":{"preamble":"You are an expert coding assistant operating inside pi, ...","tools":"<tools>\n- bash: ...\n</tools>","rules":"<rules>...","docs":"<docs>...","project_context":"<project_context>...","skills":"<skills>...","cwd":"<cwd>/home/whywood/文档</cwd>","pi_background_shell_policy":"<pi_background_shell_policy>...</pi_background_shell_policy>"},"toolsAdded":[{"name":"bash","description":"...","parameters":{}}],"timestamp":1792633264614}
+{"role":"system","content":"","sections":{"preamble":"You are an expert coding assistant operating inside pi, ...","tools":"<tools>\n- bash: ...\n</tools>","rules":"<rules>...","docs":"<docs>...","project_context":"<project_context>...","skills":"<skills>...","cwd":"<cwd>/home/user/workspace</cwd>","pi_background_shell_policy":"<pi_background_shell_policy>...</pi_background_shell_policy>"},"toolsAdded":[{"name":"bash","description":"...","parameters":{}}],"timestamp":1792633264614}
 ```
 
 本机真实会话的 section 键顺序为：`preamble, tools, rules, docs, project_context, skills, cwd, pi_background_shell_policy`（最后一个是扩展通过自定义 section 注入的，说明 sections 是开放的 `Record<string,string|null>`）。同一会话 `toolsAdded` 有 37 个工具。
@@ -615,7 +615,7 @@ Kotlin 版若不实现 MCP：**只解析不连接**，且保证 `mcp.json` 存�
 路径 `<agent-dir>/trust.json`，结构 `Record<canonicalAbsPath, boolean|null>`（`src/core/trust-manager.ts:33-43`）：
 
 ```json
-{ "/home/whywood": true, "/home/whywood/dev/skills": true, "/home/whywood/project": true }
+{ "/home/user": true, "/home/user/dev/skills": true, "/home/user/project": true }
 ```
 
 - 查找：从 `cwd` 规范化（realpath）后向上找最近一个 `true`/`false` 条目；`null` 表示"在该目录显式清空继承的信任"（`trust-manager.ts:63-80`）。

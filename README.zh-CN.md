@@ -1,5 +1,7 @@
 # pi2kotlin
 
+[![CI](https://github.com/Sadami3066/pi2kotlin/actions/workflows/ci.yml/badge.svg)](https://github.com/Sadami3066/pi2kotlin/actions/workflows/ci.yml)
+
 把 [pi](https://pi.dev)（`pi-ai`、`pi-agent`、`pi coding agent` 的 SDK 层）用 Kotlin 重写，产出一个用于构建 **Android / JVM AI agent 应用**的 Kotlin Multiplatform SDK。
 
 [English](README.md)
@@ -24,7 +26,18 @@
 
 ## 安装
 
-暂未发布到 Maven Central，先发布到本地：
+暂未发布到 Maven Central，两种方式：
+
+**直接下载产物**：从 [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases) 下载 `pi2kotlin-0.1.1-m2.zip`，解压后把 repository 指向解压目录：
+
+```kotlin
+repositories {
+    maven { url = uri("path/to/unzipped") }
+    mavenCentral()
+}
+```
+
+**从源码构建**：
 
 ```bash
 ./gradlew publishToMavenLocal

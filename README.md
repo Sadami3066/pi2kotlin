@@ -1,5 +1,7 @@
 # pi2kotlin
 
+[![CI](https://github.com/Sadami3066/pi2kotlin/actions/workflows/ci.yml/badge.svg)](https://github.com/Sadami3066/pi2kotlin/actions/workflows/ci.yml)
+
 A Kotlin Multiplatform SDK for building AI agent apps on **Android and the JVM**, rewritten from [pi](https://pi.dev) (`pi-ai`, `pi-agent`, and the SDK layer of `pi-coding-agent`).
 
 [中文文档](README.zh-CN.md)
@@ -24,7 +26,18 @@ Dependency direction: `pi-coding-agent` → `pi-agent` → `pi-ai`.
 
 ## Installation
 
-Artifacts are not on Maven Central yet. Publish them locally:
+Artifacts are not on Maven Central yet. Two options:
+
+**Prebuilt artifacts**: download `pi2kotlin-0.1.1-m2.zip` from [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases), unzip it, and point the dependency repository at the unzipped directory:
+
+```kotlin
+repositories {
+    maven { url = uri("path/to/unzipped") }
+    mavenCentral()
+}
+```
+
+**Build from source**:
 
 ```bash
 ./gradlew publishToMavenLocal

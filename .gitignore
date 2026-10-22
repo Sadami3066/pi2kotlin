@@ -8,3 +8,4 @@ local.properties
 node_modules/
 .artifacts/
 out/
+docs/device-test/

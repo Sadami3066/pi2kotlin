@@ -15,7 +15,7 @@ import kotlin.test.assertTrue
 import kotlin.test.assertNotNull
 
 private const val TRUST = "/agent/trust.json"
-private const val REAL_TRUST = "/home/whywood/.pi/agent/trust.json"
+private const val REAL_TRUST = "/home/user/.pi/agent/trust.json"
 
 class TrustManagerTest {
     private fun FakeFileSystem.putText(path: String, text: String) {
@@ -166,7 +166,7 @@ class TrustManagerTest {
         val realPath = REAL_TRUST.toPath()
         if (!fs.exists(realPath)) return@runTest
         val manager = TrustManager(realPath, fs)
-        val decision = assertNotNull(manager.get("/home/whywood".toPath()))
+        val decision = assertNotNull(manager.get("/home/user".toPath()))
         assertTrue(decision)
     }
 }

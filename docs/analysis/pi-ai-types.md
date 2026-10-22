@@ -1,6 +1,6 @@
 # pi-ai 类型模型与事件协议（Kotlin 建模基线）
 
-版本基线：`@earendil-works/pi-ai` 1.3.0（源码 `/home/whywood/.codex/private-references/pi/packages/ai`，版本号见 `src/utils/version.ts:2`）。
+版本基线：`@earendil-works/pi-ai` 1.3.0（源码 `upstream pi checkout: packages/ai`，版本号见 `src/utils/version.ts:2`）。
 行号均为相对 `packages/ai` 的 `文件:行`。
 
 本文目标：实现者只看本文即可写出 Kotlin 数据模型、序列化器、事件流和验收测试，不需要再读 TypeScript。

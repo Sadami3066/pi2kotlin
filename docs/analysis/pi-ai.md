@@ -1,6 +1,6 @@
 # pi-ai 源码分析与 Kotlin 移植方案
 
-源码基线：`/home/whywood/.codex/private-references/pi`，`packages/ai` 版本 **1.3.0**（`packages/ai/package.json`，`src/utils/version.ts:2`）。只读分析，未修改源码，未执行 npm install/构建。
+源码基线：`upstream pi checkout`，`packages/ai` 版本 **1.3.0**（`packages/ai/package.json`，`src/utils/version.ts:2`）。只读分析，未修改源码，未执行 npm install/构建。
 行号：`文件:行` 相对 `packages/ai`（如 `src/types.ts:62`），或相对仓库根（如 `nix/package.nix:26`）。
 配套文档：`docs/analysis/pi-ai-types.md`（逐类型/逐字段/事件协议/测试清单），本文聚焦包结构、provider/API 协议、认证、模型数据与 Kotlin 落地计划。
 
@@ -384,7 +384,7 @@ Provider 工厂证据：`src/providers/<id>.ts` 每个 20-100 行；api key 映�
 
 ### 8.2 已安装 npm 1.0.0 构建产物的形态（实测）
 
-pi-coding-agent 安装目录：`/home/whywood/.nvm/versions/node/v24.14.0/lib/node_modules/@earendil-works/pi-coding-agent/node_modules/@earendil-works/pi-ai`，`package.json` 版本 **1.0.0**。
+pi-coding-agent 安装目录：`npm package @earendil-works/pi-ai (installed via @earendil-works/pi-coding-agent)`，`package.json` 版本 **1.0.0**。
 - `dist/providers/data/` 有 42 个 provider JSON + `.manifest.json`，总计 968 KB；`manifest` 为 `{"schemaVersion":6,"generatedAt":"2026-10-01T18:57:11.882Z","structureHash":"...","files":{"<provider>.json":"<sha256>",...}}`。
 - 单个文件形态：`{"<api>":{"<type>:<id>":{...模型字段...}}}`，例如：
   `{"anthropic-messages":{"chat:claude-fable-5":{"id":"claude-fable-5","name":"Claude Fable 5","api":"anthropic-messages","provider":"anthropic","baseUrl":"https://api.anthropic.com","reasoning":true,"input":["text","image"],"cost":{"input":10,"output":50,"cacheRead":1,"cacheWrite":12.5},"contextWindow":1000000,"maxTokens":128000,"compat":{...},"type":"chat"}}}`
@@ -416,7 +416,7 @@ sha256sum /tmp/models.all.json
 
 ```bash
 cd /tmp
-node /home/whywood/.codex/private-references/pi/packages/ai/scripts/generate-models.ts \
+node packages/ai/scripts/generate-models.ts \
   --strict --json-only --json-output /tmp/model-catalog-gen
 # 实测（2026-10-22，Node v24.14 原生 TS type stripping，无需 npm install）：
 # EXIT 0；生成 models.all.json 932,434 bytes + models.json + providers/；

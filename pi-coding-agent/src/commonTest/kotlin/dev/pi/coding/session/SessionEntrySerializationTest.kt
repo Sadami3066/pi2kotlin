@@ -36,7 +36,7 @@ class SessionEntrySerializationTest {
             version = 3,
             id = "019eab96-b0e8-7851-921b-3f2f565d9240",
             timestamp = timestamp,
-            cwd = "/home/whywood/project/pi",
+            cwd = "/home/user/project/pi",
             parentSession = "/tmp/parent.jsonl",
         )
         val decoded = decodeSessionHeader(sessionJson.parseToJsonElement(encodeSessionHeader(header)).jsonObject)

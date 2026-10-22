@@ -49,4 +49,4 @@
 
 - 未配置 Maven Central / 私有仓库凭据；如需外部分发，需要在各模块补充 `publishing.repositories`
 - Android demo 是独立 Gradle 工程（`examples/android-demo`），依赖 `~/.m2` 中的发布产物；发布新版本后需重新构建
-- 发布前应在有真实设备的机器上跑一次 Android demo（安装、启动、离线对话、销毁重开），证据存 `docs/device-test/`
+- 发布前应在有真实设备的机器上跑一次 Android demo（安装、启动、离线对话、销毁重开）；真机证据按需本地留存，不随公开仓库发布

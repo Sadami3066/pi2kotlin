@@ -1,6 +1,6 @@
 # pi-agent-core（packages/agent）源码分析与 Kotlin 移植规格
 
-- 源码：`/home/whywood/.codex/private-references/pi/packages/agent`（只读快照），包名/版本 `@earendil-works/pi-agent-core` 1.3.0（`package.json`）。
+- 源码：`upstream pi checkout: packages/agent`（只读快照），包名/版本 `@earendil-works/pi-agent-core` 1.3.0（`package.json`）。
 - 规模：`src` 6 文件共 2539 行（types 539、agent-loop 959、agent 623、proxy 393、stream-fn 20、index 5）；`test` 4 文件共 3997 行 + utils 89 行。
 - 依赖：`@earendil-works/pi-ai` 1.3.0（类型 + EventStream/转录助手/参数校验/请求身份）、`typebox` 1.3.27（仅类型，`src` 不 import 任何运行时值）。
 - 证据约定：`src/x.ts:行`、`test/x.test.ts:行` 相对 `packages/agent`；`ai/...` 相对 `packages/ai/src`；`ca/...` 相对 `packages/coding-agent/src`。行号基于当前快照。
