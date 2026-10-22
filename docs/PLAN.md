@@ -37,14 +37,13 @@ Kotlin 版 pi 是一个**现代化、轻量的 SDK**，用于开发者构建**�
 - 1.3.0 模型目录数据（42 provider / 1,714 条）+ 加载器 + 测试
 - 三包源码分析文档（pi-ai / pi-agent / pi-coding-agent + 格式规格）
 
-### M1 工程改造为 KMP SDK（下一步）
+### M1 工程改造为 KMP SDK（已完成）
 
-- Kotlin Multiplatform：`commonMain` + `jvm` + `android` target，AGP 9.x，minSdk 26
-- 平台抽象层：HTTP 传输（OkHttp 实现）、文件系统（okio）、凭据存储（可注入）、模型目录数据嵌入
-- `pi-ai` 现有代码迁入 `commonMain`；测试源集调整
-- 验收：`./gradlew build` 在 jvm 与 android target 均通过；一个 Android instrumentation 之外的单元测试可运行
+- Kotlin Multiplatform：`commonMain` + `jvm` + `android`（AGP 9.4.1、Kotlin 2.4.21、minSdk 26），`okhttpMain` 共享源集
+- 模型目录改为一处 gzip 资源内嵌（约 68KB 源码、50KB 二进制），`scripts/vendor-model-data.sh` + `generate-catalog.py` 可复现
+- 验收：`./gradlew build` 全绿；jvmTest 与 testAndroidHostTest 都跑通
 
-### M2 pi-ai 核心协议（进行中，与 M1 并行推进）
+### M2 pi-ai 核心协议（5 个并行任务进行中）
 
 1. SSE 解析、partial JSON 增量解析
 2. transcript 规范化：normalizeContext、system/工具声明重放、孤儿工具调用、图片降级
