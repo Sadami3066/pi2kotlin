@@ -38,7 +38,7 @@ class MessageJsonTest {
 
     @Test
     fun decodesAssistantMessage() {
-        val message = PiJson.decodeFromString(MessageSerializer, assistantJson)
+        val message = PiJson.decodeFromString(Message.serializer(), assistantJson)
         val assistant = assertIs<AssistantMessage>(message)
         assertEquals("deepseek", assistant.provider)
         assertEquals(StopReason.ToolUse, assistant.stopReason)
@@ -53,26 +53,34 @@ class MessageJsonTest {
 
     @Test
     fun reencodesAssistantMessageLosslessly() {
-        val decoded = PiJson.decodeFromString(MessageSerializer, assistantJson)
-        val encoded = PiJson.encodeToJsonElement(MessageSerializer, decoded)
-        val redecode = PiJson.decodeFromString(MessageSerializer, encoded.toString())
+        val decoded = PiJson.decodeFromString(Message.serializer(), assistantJson)
+        val encoded = PiJson.encodeToJsonElement(Message.serializer(), decoded)
+        val redecode = PiJson.decodeFromString(Message.serializer(), encoded.toString())
         assertEquals(decoded, redecode)
+    }
+
+    @Test
+    fun nullableFieldsAreOmittedFromJson() {
+        val decoded = PiJson.decodeFromString(Message.serializer(), assistantJson)
+        val encoded = PiJson.encodeToJsonElement(Message.serializer(), decoded).toString()
+        assertTrue(!encoded.contains("responseModel"))
+        assertTrue(!encoded.contains("null"))
     }
 
     @Test
     fun decodesUserMessageWithTextAndBlocks() {
         val single = """{"role":"user","content":"hello","timestamp":1}"""
-        val singleMessage = assertIs<UserMessage>(PiJson.decodeFromString(MessageSerializer, single))
+        val singleMessage = assertIs<UserMessage>(PiJson.decodeFromString(Message.serializer(), single))
         assertEquals(PlainTextContent("hello"), singleMessage.content)
 
         val blocks = """
             {"role":"user","content":[{"type":"text","text":"hi"},{"type":"image","data":"aGk=","mimeType":"image/png"}],"timestamp":2}
         """.trimIndent()
-        val blockMessage = assertIs<UserMessage>(PiJson.decodeFromString(MessageSerializer, blocks))
+        val blockMessage = assertIs<UserMessage>(PiJson.decodeFromString(Message.serializer(), blocks))
         assertEquals(2, (blockMessage.content as BlockContent).blocks.size)
         assertEquals(
             PiJson.parseToJsonElement(blocks),
-            PiJson.encodeToJsonElement(MessageSerializer, blockMessage),
+            PiJson.encodeToJsonElement(Message.serializer(), blockMessage),
         )
     }
 
@@ -81,10 +89,10 @@ class MessageJsonTest {
         val json = """
             {"role":"toolResult","toolCallId":"call_1","toolName":"read","content":[{"type":"text","text":"ok"}],"isError":false,"timestamp":3}
         """.trimIndent()
-        val message = assertIs<ToolResultMessage>(PiJson.decodeFromString(MessageSerializer, json))
+        val message = assertIs<ToolResultMessage>(PiJson.decodeFromString(Message.serializer(), json))
         assertEquals("read", message.toolName)
         assertEquals(false, message.isError)
-        assertEquals(PiJson.parseToJsonElement(json), PiJson.encodeToJsonElement(MessageSerializer, message))
+        assertEquals(PiJson.parseToJsonElement(json), PiJson.encodeToJsonElement(Message.serializer(), message))
     }
 
     @Test
@@ -92,9 +100,9 @@ class MessageJsonTest {
         val json = """
             {"role":"system","content":"You are pi.","toolsAdded":[{"name":"read","description":"Read a file","parameters":{"type":"object","properties":{}}}],"timestamp":4}
         """.trimIndent()
-        val message = assertIs<SystemMessage>(PiJson.decodeFromString(MessageSerializer, json))
+        val message = assertIs<SystemMessage>(PiJson.decodeFromString(Message.serializer(), json))
         assertEquals("read", message.toolsAdded!!.single().name)
-        assertEquals(PiJson.parseToJsonElement(json), PiJson.encodeToJsonElement(MessageSerializer, message))
+        assertEquals(PiJson.parseToJsonElement(json), PiJson.encodeToJsonElement(Message.serializer(), message))
     }
 }
 
@@ -128,9 +136,9 @@ class AssistantMessageEventStreamTest {
     @Test
     fun serializesEventDiscriminator() {
         val message = partial()
-        val encoded = PiJson.encodeToJsonElement(AssistantMessageEventSerializer, TextDeltaEvent(0, "hey", message))
+        val encoded = PiJson.encodeToJsonElement(AssistantMessageEvent.serializer(), TextDeltaEvent(0, "hey", message))
         assertEquals("text_delta", encoded.jsonObject["type"]!!.jsonPrimitive.content)
-        val decoded = PiJson.decodeFromString(AssistantMessageEventSerializer, encoded.toString())
+        val decoded = PiJson.decodeFromString(AssistantMessageEvent.serializer(), encoded.toString())
         assertIs<TextDeltaEvent>(decoded)
     }
 
@@ -138,7 +146,7 @@ class AssistantMessageEventStreamTest {
     fun eventJsonKeepsCamelCaseFields() {
         val message = partial()
         val encoded = PiJson.encodeToJsonElement(
-            AssistantMessageEventSerializer,
+            AssistantMessageEvent.serializer(),
             DoneEvent(StopReason.Stop, message),
         ).jsonObject
         assertEquals("done", encoded["type"]!!.jsonPrimitive.content)

@@ -31,7 +31,7 @@ class ModelCatalogTest {
         assertEquals(384000L, model.maxTokens)
         assertTrue(model.reasoning)
         assertTrue(model.supportsImageInput())
-        assertEquals("low", model.thinkingLevelMap["low"])
+        assertEquals("low", model.thinkingLevelMap!!["low"])
         assertEquals(null, model.thinkingLevelMap["minimal"])
     }
 

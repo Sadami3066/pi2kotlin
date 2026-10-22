@@ -1,6 +1,7 @@
 package dev.pi.ai
 
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
@@ -9,9 +10,8 @@ import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.JsonClassDiscriminator
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 @Serializable(with = MessageContentSerializer::class)
 sealed interface MessageContent
@@ -28,7 +28,7 @@ object MessageContentSerializer : KSerializer<MessageContent> {
         when (value) {
             is PlainTextContent -> jsonEncoder.encodeJsonElement(JsonPrimitive(value.text))
             is BlockContent -> jsonEncoder.json.encodeToJsonElement(
-                kotlinx.serialization.builtins.ListSerializer(ContentSerializer),
+                kotlinx.serialization.builtins.ListSerializer(Content.serializer()),
                 value.blocks,
             ).let(jsonEncoder::encodeJsonElement)
         }
@@ -42,7 +42,7 @@ object MessageContentSerializer : KSerializer<MessageContent> {
         } else {
             BlockContent(
                 jsonDecoder.json.decodeFromJsonElement(
-                    kotlinx.serialization.builtins.ListSerializer(ContentSerializer),
+                    kotlinx.serialization.builtins.ListSerializer(Content.serializer()),
                     element,
                 ),
             )
@@ -50,10 +50,12 @@ object MessageContentSerializer : KSerializer<MessageContent> {
     }
 }
 
-@Serializable(with = MessageSerializer::class)
+@Serializable
+@JsonClassDiscriminator("role")
 sealed interface Message
 
 @Serializable
+@SerialName("system")
 data class SystemMessage(
     val content: MessageContent,
     val sections: Map<String, String?>? = null,
@@ -63,12 +65,14 @@ data class SystemMessage(
 ) : Message
 
 @Serializable
+@SerialName("user")
 data class UserMessage(
     val content: MessageContent,
     val timestamp: Long,
 ) : Message
 
 @Serializable
+@SerialName("assistant")
 data class AssistantMessage(
     var content: MutableList<Content>,
     var api: String,
@@ -90,6 +94,7 @@ data class AssistantMessage(
 ) : Message
 
 @Serializable
+@SerialName("toolResult")
 data class ToolResultMessage(
     val toolCallId: String,
     val toolName: String,
@@ -129,44 +134,3 @@ data class NestedToolCalls(
     val calls: List<NestedToolCallRecord>,
     val complete: Boolean,
 )
-
-object MessageSerializer : KSerializer<Message> {
-    override val descriptor: SerialDescriptor = JsonElement.serializer().descriptor
-
-    override fun serialize(encoder: Encoder, value: Message) {
-        val jsonEncoder = encoder as JsonEncoder
-        val json = jsonEncoder.json
-        val body = when (value) {
-            is SystemMessage -> json.encodeToJsonElement(SystemMessage.serializer(), value)
-            is UserMessage -> json.encodeToJsonElement(UserMessage.serializer(), value)
-            is AssistantMessage -> json.encodeToJsonElement(AssistantMessage.serializer(), value)
-            is ToolResultMessage -> json.encodeToJsonElement(ToolResultMessage.serializer(), value)
-        }.jsonObject
-        val role = when (value) {
-            is SystemMessage -> "system"
-            is UserMessage -> "user"
-            is AssistantMessage -> "assistant"
-            is ToolResultMessage -> "toolResult"
-        }
-        val result = buildJsonObject {
-            put("role", JsonPrimitive(role))
-            body.forEach { (key, element) -> put(key, element) }
-        }
-        jsonEncoder.encodeJsonElement(result)
-    }
-
-    override fun deserialize(decoder: Decoder): Message {
-        val jsonDecoder = decoder as JsonDecoder
-        val element = jsonDecoder.decodeJsonElement()
-        val role = element.jsonObject["role"]?.jsonPrimitive?.content
-            ?: throw IllegalArgumentException("message object has no role: $element")
-        val json = jsonDecoder.json
-        return when (role) {
-            "system" -> json.decodeFromJsonElement(SystemMessage.serializer(), element)
-            "user" -> json.decodeFromJsonElement(UserMessage.serializer(), element)
-            "assistant" -> json.decodeFromJsonElement(AssistantMessage.serializer(), element)
-            "toolResult" -> json.decodeFromJsonElement(ToolResultMessage.serializer(), element)
-            else -> throw IllegalArgumentException("unknown message role: $role")
-        }
-    }
-}
