@@ -8,9 +8,9 @@
 
 | 模块 | 对应上游 | 状态 |
 |---|---|---|
-| `pi-ai` | `packages/ai`（unified LLM API，27.7k 行） | 类型/事件流/模型目录完成，协议实现进行中 |
-| `pi-agent` | `packages/agent`（agent runtime，2.5k 行） | 规格已就绪，待实现 |
-| `pi-coding-agent` | `packages/coding-agent`（core/SDK 层） | 待实现；不做 CLI/TUI |
+| `pi-ai` | `packages/ai`（unified LLM API，27.7k 行） | 核心完成：类型/事件流/HTTP/SSE/transcript/校验/Models/openai-completions/42 provider/认证 |
+| `pi-agent` | `packages/agent`（agent runtime，2.5k 行） | 完成：事件模型/agent loop/工具执行/Agent 类/proxy |
+| `pi-coding-agent` | `packages/coding-agent`（core/SDK 层） | 下一步：会话/设置/工具/系统提示词/压缩/扩展 hook |
 
 ## 形态
 

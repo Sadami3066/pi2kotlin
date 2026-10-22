@@ -43,25 +43,31 @@ Kotlin 版 pi 是一个**现代化、轻量的 SDK**，用于开发者构建**�
 - 模型目录改为一处 gzip 资源内嵌（约 68KB 源码、50KB 二进制），`scripts/vendor-model-data.sh` + `generate-catalog.py` 可复现
 - 验收：`./gradlew build` 全绿；jvmTest 与 testAndroidHostTest 都跑通
 
-### M2 pi-ai 核心协议（5 个并行任务进行中）
+### M2 pi-ai 核心协议（已完成）
 
 1. SSE 解析、partial JSON 增量解析
 2. transcript 规范化：normalizeContext、system/工具声明重放、孤儿工具调用、图片降级
 3. JSON Schema 工具参数校验（错误文本与上游一致）
 4. retry/abort/错误规范化/context overflow 判定
-5. `Models`/`Provider` 注册表 + api key 认证 + `calculateCost`/thinking level
-6. `openai-completions`（覆盖 28 个 provider）
+5. `Models`/`Provider` 注册表 + api key 认证 + `calculateCost`/thinking level + 42 个内置 provider
+6. `openai-completions`（28 个 provider 可用；compat 28 字段全支持）
 7. faux provider + MockWebServer fixture 测试
 
-### M3 pi-ai 全量 provider
+验收：`:pi-ai:jvmTest` 250 tests + `:pi-ai:testAndroidHostTest` 全绿；`./gradlew build --rerun-tasks` 三模块双 target 全绿。
+
+### M3 pi-ai 其余 provider
+
+`openai-completions` 已覆盖 28 个 provider；其余 13 个 API 实现仍为占位。
 
 `anthropic-messages`、`openai-responses`、`azure`、`google-generative-ai`、`google-vertex`、`mistral-conversations`、`bedrock-converse-stream`、`openai-codex-responses`、`pi-messages`、image/classifier API；9 个 OAuth flow（按移动端可用的方式实现：外部浏览器 + 回调/设备码）。
 
-### M4 pi-agent
+### M4 pi-agent（已完成）
 
-AgentMessage/AgentEvent、双层 agent loop、并行/串行工具执行、hooks、队列/中断、transport/proxy；移植上游 92 个测试用例，逐条断言 B01–B50 行为清单。
+AgentMessage/AgentEvent、双层 agent loop、并行/串行工具执行、hooks、队列/中断、transport/proxy。
 
-### M5 pi-coding-agent SDK 层
+验收：`:pi-agent:jvmTest` 112 tests 全绿（B01–B13、B15–B50 均有直接断言，B14 已实现）。
+
+### M5 pi-coding-agent SDK 层（下一步）
 
 - `AgentSession`：prompt/steer/followUp/abort/订阅/状态
 - `SessionManager`：JSONL 持久化、树/分支/fork、in-memory 模式、可配置存储根
