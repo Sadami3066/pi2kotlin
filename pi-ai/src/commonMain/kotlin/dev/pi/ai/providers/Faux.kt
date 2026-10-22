@@ -255,8 +255,19 @@ internal class FauxCore(options: FauxProviderOptions) {
                     outer.end(estimated)
                     return@launch
                 }
+                if (options.stream.signal?.isAborted == true) {
+                    val message = createErrorMessage(
+                        IllegalStateException("Request was aborted"),
+                        api,
+                        provider,
+                        model.id,
+                    ).copy(stopReason = StopReason.Aborted, errorMessage = "Request was aborted")
+                    outer.push(ErrorEvent(StopReason.Aborted, message))
+                    outer.end(message)
+                    return@launch
+                }
                 val message = resolveResponse(step, context, options, model)
-                streamWithDeltas(outer, message)
+                streamWithDeltas(outer, message, options.stream.signal)
             } catch (error: Throwable) {
                 val message = createErrorMessage(error, api, provider, model.id)
                 outer.push(ErrorEvent(StopReason.Error, message))
@@ -284,7 +295,11 @@ internal class FauxCore(options: FauxProviderOptions) {
         )
     }
 
-    private suspend fun streamWithDeltas(stream: AssistantMessageEventStream, message: AssistantMessage) {
+    private suspend fun streamWithDeltas(
+        stream: AssistantMessageEventStream,
+        message: AssistantMessage,
+        signal: dev.pi.ai.RunSignal?,
+    ) {
         val partial = message.copy(content = mutableListOf(), stopReason = StopReason.Pending)
         stream.push(StartEvent(partial.copy()))
 
@@ -295,6 +310,7 @@ internal class FauxCore(options: FauxProviderOptions) {
                     stream.push(ThinkingStartEvent(index, partial.copy()))
                     for (chunk in splitStringByTokenSize(block.thinking)) {
                         scheduleChunk(chunk)
+                        if (abortStreaming(stream, partial, signal)) return
                         (partial.content[index] as ThinkingContent).thinking += chunk
                         stream.push(ThinkingDeltaEvent(index, chunk, partial.copy()))
                     }
@@ -306,6 +322,7 @@ internal class FauxCore(options: FauxProviderOptions) {
                     stream.push(TextStartEvent(index, partial.copy()))
                     for (chunk in splitStringByTokenSize(block.text)) {
                         scheduleChunk(chunk)
+                        if (abortStreaming(stream, partial, signal)) return
                         (partial.content[index] as TextContent).text += chunk
                         stream.push(TextDeltaEvent(index, chunk, partial.copy()))
                     }
@@ -323,6 +340,7 @@ internal class FauxCore(options: FauxProviderOptions) {
                     stream.push(ToolCallStartEvent(index, partial.copy()))
                     for (chunk in splitStringByTokenSize(block.arguments.toString())) {
                         scheduleChunk(chunk)
+                        if (abortStreaming(stream, partial, signal)) return
                         stream.push(ToolCallDeltaEvent(index, chunk, partial.copy()))
                     }
                     (partial.content[index] as ToolCall).arguments = block.arguments
@@ -346,6 +364,18 @@ internal class FauxCore(options: FauxProviderOptions) {
                 stream.end(message)
             }
         }
+    }
+
+    private fun abortStreaming(
+        stream: AssistantMessageEventStream,
+        partial: AssistantMessage,
+        signal: dev.pi.ai.RunSignal?,
+    ): Boolean {
+        if (signal?.isAborted != true) return false
+        val aborted = partial.copy(stopReason = StopReason.Aborted, errorMessage = "Request was aborted")
+        stream.push(ErrorEvent(StopReason.Aborted, aborted))
+        stream.end(aborted)
+        return true
     }
 
     private suspend fun scheduleChunk(chunk: String) {

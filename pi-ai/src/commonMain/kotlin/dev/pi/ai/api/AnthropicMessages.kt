@@ -784,17 +784,17 @@ private fun convertContentBlocks(content: List<Content>): JsonElement {
     return JsonArray(blocks)
 }
 
-private data class SplitErrorToolResult(
+private data class AnthropicSplitErrorToolResult(
     val content: List<Content>,
     val caption: String,
     val images: List<ImageContent>,
 )
 
-private fun splitErrorToolResultImages(message: ToolResultMessage): SplitErrorToolResult? {
+private fun splitErrorToolResultImages(message: ToolResultMessage): AnthropicSplitErrorToolResult? {
     if (!message.isError) return null
     val images = message.content.filterIsInstance<ImageContent>()
     if (images.isEmpty()) return null
-    return SplitErrorToolResult(
+    return AnthropicSplitErrorToolResult(
         content = replaceImagesWithPlaceholder(message.content),
         caption = "Images from the error result of tool call ${message.toolCallId} (${message.toolName}):",
         images = images,

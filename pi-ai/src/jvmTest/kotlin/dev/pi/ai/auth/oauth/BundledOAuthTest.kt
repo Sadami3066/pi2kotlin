@@ -20,15 +20,66 @@ class BundledOAuthTest {
     }
 
     @Test
-    fun bundlesTheImplementedProviderFlows() {
+    fun bundlesAllImplementedProviderFlows() {
         val flows = bundledOAuthFlows()
-        assertEquals(setOf("anthropic", "openai", "github-copilot"), flows.keys)
+        assertEquals(
+            setOf(
+                "anthropic",
+                "openai",
+                "github-copilot",
+                "openai-codex",
+                "xai",
+                "openrouter",
+                "kimi-coding",
+                "meta",
+                "radius",
+            ),
+            flows.keys,
+        )
         assertEquals("Anthropic (Claude Pro/Max)", flows["anthropic"]!!.name)
         assertEquals("OpenAI (ChatGPT subscription)", flows["openai"]!!.name)
         assertEquals("GitHub Copilot", flows["github-copilot"]!!.name)
-        assertEquals("oauth", flows["anthropic"]!!.type)
+        assertEquals("OpenAI (ChatGPT Plus/Pro)", flows["openai-codex"]!!.name)
+        assertEquals("xAI (Grok/X subscription)", flows["xai"]!!.name)
+        assertEquals("OpenRouter OAuth", flows["openrouter"]!!.name)
+        assertEquals("Kimi Code (subscription)", flows["kimi-coding"]!!.name)
+        assertEquals("Meta (Muse subscription)", flows["meta"]!!.name)
+        assertEquals("Radius", flows["radius"]!!.name)
+        for ((providerId, flow) in flows) {
+            assertEquals(providerId, flow.id)
+            assertEquals("oauth", flow.type)
+        }
         assertTrue(flows["openai"]!!.isSubscription)
+        assertTrue(flows["xai"]!!.isSubscription)
+        assertTrue(flows["kimi-coding"]!!.isSubscription)
+        assertTrue(flows["meta"]!!.isSubscription)
+        assertTrue(flows["openai-codex"]!!.isSubscription)
         assertEquals("Sign in with ChatGPT", flows["openai"]!!.loginLabel)
+        assertEquals("Sign in with SuperGrok or X Premium", flows["xai"]!!.loginLabel)
+        assertEquals("Sign in with Kimi Code", flows["kimi-coding"]!!.loginLabel)
+        assertEquals("Sign in with Meta", flows["meta"]!!.loginLabel)
+        assertEquals("Sign in with OpenRouter", flows["openrouter"]!!.loginLabel)
+    }
+
+    @Test
+    fun resolvesOAuthCredentialsForBundledFlows() = runTest {
+        val (store, directory) = temporaryStore()
+        try {
+            saveOAuthCredential(
+                "kimi-coding",
+                store,
+                OAuthCredential(refresh = "kimi-refresh", access = "kimi-access", expires = oauthNowMillis() + 3_600_000),
+            )
+            val transport = FakeHttpTransport { error("no network expected") }
+            val resolver = oauthResolver("kimi-coding", bundledOAuthFlows()["kimi-coding"]!!, store, transport)
+            val auth = resolver.resolve()
+            assertEquals(null, auth?.apiKey)
+            assertEquals("Bearer kimi-access", auth?.headers?.get("Authorization"))
+            assertEquals("OAuth", auth?.source)
+            assertTrue(transport.requests.isEmpty())
+        } finally {
+            FileSystem.SYSTEM.deleteRecursively(directory)
+        }
     }
 
     @Test

@@ -1,12 +1,17 @@
 package dev.pi.ai
 
 import dev.pi.ai.api.ApiProvider
+import dev.pi.ai.api.ClassifierApiProvider
+import dev.pi.ai.api.ImagesApiProvider
+import dev.pi.ai.api.classifierErrorResult
+import dev.pi.ai.api.imageErrorResult
 import dev.pi.ai.auth.AuthOverrides
 import dev.pi.ai.auth.AuthResolver
 import dev.pi.ai.auth.ResolvedAuth
 import dev.pi.ai.http.HttpTransport
 import dev.pi.ai.providers.builtinProviders
 import dev.pi.ai.utils.normalizeContext
+import kotlinx.coroutines.CancellationException
 
 interface ApiFactory {
     fun create(): ApiProvider
@@ -21,6 +26,8 @@ class Provider(
     val models: List<Model>,
     val allModels: List<AnyModel> = models,
     val auth: AuthResolver,
+    val imagesApi: (() -> ImagesApiProvider)? = null,
+    val classifierApis: Map<String, () -> ClassifierApiProvider> = emptyMap(),
 )
 
 class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()) {
@@ -113,6 +120,49 @@ class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()
         signal: RunSignal? = null,
     ): AssistantMessage = streamSimple(model, context, options, signal).result()
 
+    suspend fun generateImages(
+        model: ImageModel,
+        context: ImagesContext,
+        options: ImagesOptions? = null,
+    ): AssistantImages = try {
+        val provider = requireProvider(model)
+        val imagesApi = provider.imagesApi
+            ?: throw IllegalStateException("Provider ${provider.id} does not support image generation")
+        val resolved = getAuth(model, AuthOverrides(apiKey = options?.apiKey, env = options?.env))
+            ?: throw IllegalStateException("Provider is not configured: ${model.provider}")
+        imagesApi().generateImages(model, context, applyImagesOptions(resolved, options))
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        imageErrorResult(model, error)
+    }
+
+    suspend fun classify(
+        model: ClassifierModel,
+        context: ClassifierContext,
+        options: ClassifierOptions? = null,
+    ): ClassifierResult = try {
+        if (!context.images.isNullOrEmpty() && !model.input.contains(ModelInputModality.Image)) {
+            throw IllegalStateException("Model ${model.provider}/${model.id} does not accept image input")
+        }
+        val provider = requireProvider(model)
+        val classifierApi = provider.classifierApis[model.api]
+            ?: throw IllegalStateException(
+                if (provider.classifierApis.isEmpty()) {
+                    "Provider ${provider.id} does not support classification"
+                } else {
+                    "Provider ${provider.id} has no classifier implementation for \"${model.api}\""
+                },
+            )
+        val resolved = getAuth(model, AuthOverrides(apiKey = options?.apiKey, env = options?.env))
+            ?: throw IllegalStateException("Provider is not configured: ${model.provider}")
+        classifierApi().classify(model, context, applyClassifierOptions(resolved, options))
+    } catch (error: CancellationException) {
+        throw error
+    } catch (error: Throwable) {
+        classifierErrorResult(model, error)
+    }
+
     private suspend fun resolveAuth(provider: Provider, options: StreamOptions?): ResolvedAuth =
         provider.auth.resolve(AuthOverrides(apiKey = options?.apiKey, env = options?.env))
             ?: throw IllegalStateException("Provider is not configured: ${provider.id}")
@@ -123,6 +173,22 @@ class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()
     private fun createApiProvider(provider: Provider, model: Model): ApiProvider =
         provider.apiProviders[model.api]?.invoke()
             ?: throw IllegalStateException("Provider ${provider.id} has no API implementation for \"${model.api}\"")
+
+    private fun applyImagesOptions(resolved: ResolvedAuth, options: ImagesOptions?): ImagesOptions {
+        val source = options ?: ImagesOptions()
+        return source.copy(
+            apiKey = source.apiKey ?: resolved.apiKey,
+            headers = mergeHeaders(resolved.headers, source.headers),
+        )
+    }
+
+    private fun applyClassifierOptions(resolved: ResolvedAuth, options: ClassifierOptions?): ClassifierOptions {
+        val source = options ?: ClassifierOptions()
+        return source.copy(
+            apiKey = source.apiKey ?: resolved.apiKey,
+            headers = mergeHeaders(resolved.headers, source.headers),
+        )
+    }
 
     private fun applyAuthOptions(
         provider: Provider,

@@ -503,16 +503,40 @@ class ModelsTest {
 
     @Test
     fun placeholderApiThrowsNotImplemented() = runTest {
-        val providers = builtinProviders(NoopTransport).associateBy { it.id }
-        val bedrock = assertNotNull(providers["amazon-bedrock"])
+        val customModels = builtinProviders(NoopTransport)
+        val template = assertNotNull(customModels.firstOrNull { it.models.isNotEmpty() })
+        val baseModel = template.models.first()
+        val model = baseModel.copy(api = "unknown-custom-api", provider = "custom-unknown")
+        val provider = Provider(
+            id = "custom-unknown",
+            name = "Custom Unknown",
+            apiProviders = mapOf("unknown-custom-api" to { UnknownApiProvider() }),
+            models = listOf(model),
+            allModels = listOf(model),
+            auth = dev.pi.ai.auth.StaticApiKeyAuth("test"),
+        )
         val models = Models()
-        models.setProvider(bedrock)
-        val model = bedrock.models.first()
-        assertEquals("bedrock-converse-stream", model.api)
+        models.setProvider(provider)
         val error = assertFailsWith<NotImplementedError> {
             models.stream(model, userContext(), StreamOptions(apiKey = "test"))
         }
-        assertTrue(error.message!!.contains("bedrock-converse-stream"))
+        assertTrue(error.message!!.contains("unknown-custom-api"))
+    }
+
+    private class UnknownApiProvider : ApiProvider {
+        override val api: String = "unknown-custom-api"
+
+        override suspend fun stream(
+            model: Model,
+            context: TranscriptContext,
+            options: StreamOptions,
+        ): AssistantMessageEventStream = throw NotImplementedError("Provider API \"unknown-custom-api\" is not implemented")
+
+        override suspend fun streamSimple(
+            model: Model,
+            context: TranscriptContext,
+            options: SimpleStreamOptions,
+        ): AssistantMessageEventStream = throw NotImplementedError("Provider API \"unknown-custom-api\" is not implemented")
     }
 
     private fun tempAuthDirectory() =

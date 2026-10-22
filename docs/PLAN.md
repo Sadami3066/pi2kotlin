@@ -94,14 +94,17 @@ AgentMessage/AgentEvent、双层 agent loop、并行/串行工具执行、hooks�
 - Android demo app
 - 扩展 hook 细化（custom message 持久化、input 流程）
 
-### M3 其余 provider（进行中）
+### M3 provider 矩阵（已完成）
 
-已完成 5 个 chat API 实现：`openai-completions`、`openai-responses`、`anthropic-messages`、`google-generative-ai`、`google-vertex`。
-模型目录 42 个 provider 中 **36 个完全可用**；剩余：amazon-bedrock、azure（部分 openai-completions 已可用）、mistral、openai-codex、radius(pi-messages)、typesafe（仅 classifier）。
+**10 个 chat API 全部实现**：openai-completions、openai-responses、openai-codex-responses、azure-openai-responses、anthropic-messages、google-generative-ai、google-vertex、mistral-conversations、bedrock-converse-stream（AWS SigV4 + 二进制 event stream）、pi-messages（radius 网关）。
 
-OAuth：基础设施（PKCE/设备码/回调服务器/凭据刷新）已完成，anthropic、openai-chatgpt、github-copilot 三个流程可用；剩余 openai-codex、xai、kimi、meta、radius、openrouter。
+**图片/分类器**：openrouter-images；typesafe-system-one、openai-decisions、cloudflare-workers-ai-system-one；Models 层 `generateImages`/`classify` 分发。
 
-其余待实现 API：azure-openai-responses、mistral-conversations、bedrock-converse-stream（SigV4/事件流）、openai-codex-responses（WebSocket/zstd 可选）、pi-messages、图片 API（openrouter-images）、classifier API（typesafe/openai-decisions/cloudflare/llama-cpp）。
+**OAuth 9 个流程全部实现**：anthropic、openai-chatgpt、github-copilot、openai-codex、xai、openrouter、kimi-coding、meta、radius。基础设施（纯 Kotlin SHA-256/PKCE、设备码轮询、本地回调服务器、凭据刷新写回）已完成并接入 builtinProviders 认证链（OAuth → auth.json api key → env）。
+
+模型目录 42 个 provider 全部可路由（typesafe 仅 classifier）。
+
+已知偏差：codex 的 WebSocket 传输/zstd 压缩未实现（回退 SSE）；bedrock 凭据链仅 env/bearer（无 profile/IMDS/STS）；radius 动态目录仅留接口。
 
 ### M6 打磨与发布
 

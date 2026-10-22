@@ -8,7 +8,7 @@
 
 | 模块 | 对应上游 | 状态 |
 |---|---|---|
-| `pi-ai` | `packages/ai`（unified LLM API，27.7k 行） | 5 个 chat API（openai-completions/responses/anthropic/google/vertex），42 provider 中 36 个完全可用；OAuth 基础设施 + 3 个登录流程 |
+| `pi-ai` | `packages/ai`（unified LLM API，27.7k 行） | 完成：10 个 chat API、图片/分类器 API、42 provider、9 个 OAuth 流程 |
 | `pi-agent` | `packages/agent`（agent runtime，2.5k 行） | 完成：事件模型/agent loop/工具执行/Agent 类/proxy |
 | `pi-coding-agent` | `packages/coding-agent`（core/SDK 层） | 主体完成：SessionManager/Settings/模型/工具/提示词/AgentSession + createAgentSession SDK |
 

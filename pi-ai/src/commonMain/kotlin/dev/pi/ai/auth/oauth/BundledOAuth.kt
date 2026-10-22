@@ -13,6 +13,12 @@ fun bundledOAuthFlows(): Map<String, OAuthAuth> = mapOf(
     "anthropic" to anthropicOAuth,
     "openai" to openaiChatGPTOAuth,
     "github-copilot" to githubCopilotOAuth,
+    "openai-codex" to openAICodexOAuth,
+    "xai" to xaiOAuth,
+    "openrouter" to openRouterOAuth,
+    "kimi-coding" to kimiCodingOAuth,
+    "meta" to metaOAuth,
+    "radius" to radiusOAuth,
 )
 
 fun oauthResolver(

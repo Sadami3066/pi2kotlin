@@ -47,12 +47,14 @@ class FakeOAuthInteraction(
     override val signal: RunSignal? = null,
 ) : OAuthInteraction {
     val openedUrls = mutableListOf<String>()
+    val openedInstructions = mutableListOf<String?>()
     val messages = mutableListOf<String>()
     val selectMessages = mutableListOf<String>()
     val promptMessages = mutableListOf<String>()
 
     override suspend fun openUrl(url: String, instructions: String?) {
         openedUrls += url
+        openedInstructions += instructions
     }
 
     override suspend fun showMessage(message: String) {

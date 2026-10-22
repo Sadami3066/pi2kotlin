@@ -8,11 +8,30 @@ import dev.pi.ai.SimpleStreamOptions
 import dev.pi.ai.StreamOptions
 import dev.pi.ai.TranscriptContext
 import dev.pi.ai.api.ApiProvider
+import dev.pi.ai.api.ClassifierApiProvider
+import dev.pi.ai.api.ImagesApiProvider
 import dev.pi.ai.api.anthropicMessagesApi
+import dev.pi.ai.api.azureOpenAIResponsesApi
+import dev.pi.ai.api.bedrockConverseStreamApi
+import dev.pi.ai.api.cloudflareWorkersAiSystemOneApi
 import dev.pi.ai.api.googleGenerativeAIApi
 import dev.pi.ai.api.googleVertexApi
+import dev.pi.ai.api.mistralConversationsApi
+import dev.pi.ai.api.openAICodexResponsesApi
 import dev.pi.ai.api.openAICompletionsApi
 import dev.pi.ai.api.openAIResponsesApi
+import dev.pi.ai.api.openAiDecisionsApi
+import dev.pi.ai.api.openRouterImagesApi
+import dev.pi.ai.api.piMessagesApi
+import dev.pi.ai.api.typesafeSystemOneApi
+import dev.pi.ai.ClassifierModel
+import dev.pi.ai.ImageModel
+import dev.pi.ai.ImagesContext
+import dev.pi.ai.ImagesOptions
+import dev.pi.ai.ClassifierContext
+import dev.pi.ai.ClassifierOptions
+import dev.pi.ai.AssistantImages
+import dev.pi.ai.ClassifierResult
 import dev.pi.ai.auth.AuthResolver
 import dev.pi.ai.auth.CompositeAuth
 import dev.pi.ai.auth.CredentialStore
@@ -24,9 +43,18 @@ import dev.pi.ai.http.HttpTransport
 
 private const val OPENAI_COMPLETIONS_API = "openai-completions"
 private const val OPENAI_RESPONSES_API = "openai-responses"
+private const val OPENAI_CODEX_RESPONSES_API = "openai-codex-responses"
+private const val AZURE_OPENAI_RESPONSES_API = "azure-openai-responses"
 private const val ANTHROPIC_MESSAGES_API = "anthropic-messages"
 private const val GOOGLE_GENERATIVE_AI_API = "google-generative-ai"
 private const val GOOGLE_VERTEX_API = "google-vertex"
+private const val MISTRAL_CONVERSATIONS_API = "mistral-conversations"
+private const val BEDROCK_CONVERSE_STREAM_API = "bedrock-converse-stream"
+private const val PI_MESSAGES_API = "pi-messages"
+private const val OPENROUTER_IMAGES_API = "openrouter-images"
+private const val TYPESAFE_SYSTEM_ONE_API = "typesafe-system-one"
+private const val OPENAI_DECISIONS_API = "openai-decisions"
+private const val CLOUDFLARE_WORKERS_AI_SYSTEM_ONE_API = "cloudflare-workers-ai-system-one"
 
 fun builtinProviders(
     transport: HttpTransport,
@@ -37,6 +65,8 @@ fun builtinProviders(
         val allModels = ModelCatalog.findByProvider(spec.id)
         val chatModels = allModels.filterIsInstance<Model>()
         val apis = allModels.map { it.api }.distinct()
+        val imageApis = allModels.filterIsInstance<ImageModel>().map { it.api }.distinct()
+        val classifierApis = allModels.filterIsInstance<ClassifierModel>().map { it.api }.distinct()
         Provider(
             id = spec.id,
             name = spec.name,
@@ -46,6 +76,8 @@ fun builtinProviders(
             models = chatModels,
             allModels = allModels,
             auth = providerAuth(spec, oauthFlows, credentialStore, transport),
+            imagesApi = imagesFactory(imageApis, transport),
+            classifierApis = classifierApis.associateWith { api -> classifierFactory(api, transport) },
         )
     }
 }
@@ -67,10 +99,45 @@ private fun providerAuth(
 private fun apiFactory(api: String, transport: HttpTransport): () -> ApiProvider = when (api) {
     OPENAI_COMPLETIONS_API -> ({ openAICompletionsApi(transport) })
     OPENAI_RESPONSES_API -> ({ openAIResponsesApi(transport) })
+    OPENAI_CODEX_RESPONSES_API -> ({ openAICodexResponsesApi(transport) })
+    AZURE_OPENAI_RESPONSES_API -> ({ azureOpenAIResponsesApi(transport) })
     ANTHROPIC_MESSAGES_API -> ({ anthropicMessagesApi(transport) })
     GOOGLE_GENERATIVE_AI_API -> ({ googleGenerativeAIApi(transport) })
     GOOGLE_VERTEX_API -> ({ googleVertexApi(transport) })
+    MISTRAL_CONVERSATIONS_API -> ({ mistralConversationsApi(transport) })
+    BEDROCK_CONVERSE_STREAM_API -> ({ bedrockConverseStreamApi(transport) })
+    PI_MESSAGES_API -> ({ piMessagesApi(transport) })
     else -> ({ UnimplementedApiProvider(api) })
+}
+
+private fun imagesFactory(apis: List<String>, transport: HttpTransport): (() -> ImagesApiProvider)? =
+    when {
+        apis.contains(OPENROUTER_IMAGES_API) -> ({ openRouterImagesApi(transport) })
+        apis.isEmpty() -> null
+        else -> ({ UnimplementedImagesApiProvider(apis.first()) })
+    }
+
+private fun classifierFactory(api: String, transport: HttpTransport): () -> ClassifierApiProvider = when (api) {
+    TYPESAFE_SYSTEM_ONE_API -> ({ typesafeSystemOneApi(transport) })
+    OPENAI_DECISIONS_API -> ({ openAiDecisionsApi(transport) })
+    CLOUDFLARE_WORKERS_AI_SYSTEM_ONE_API -> ({ cloudflareWorkersAiSystemOneApi(transport) })
+    else -> ({ UnimplementedClassifierApiProvider(api) })
+}
+
+private class UnimplementedImagesApiProvider(private val api: String) : ImagesApiProvider {
+    override suspend fun generateImages(
+        model: ImageModel,
+        context: ImagesContext,
+        options: ImagesOptions,
+    ): AssistantImages = throw NotImplementedError("Image API \"$api\" is not implemented")
+}
+
+private class UnimplementedClassifierApiProvider(private val api: String) : ClassifierApiProvider {
+    override suspend fun classify(
+        model: ClassifierModel,
+        context: ClassifierContext,
+        options: ClassifierOptions,
+    ): ClassifierResult = throw NotImplementedError("Classifier API \"$api\" is not implemented")
 }
 
 private class UnimplementedApiProvider(override val api: String) : ApiProvider {
