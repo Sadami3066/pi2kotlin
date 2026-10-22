@@ -19,6 +19,7 @@ import dev.pi.ai.StopReason
 import dev.pi.ai.SystemMessage
 import dev.pi.ai.TextContent
 import dev.pi.ai.UserMessage
+import dev.pi.ai.utils.Retry
 import dev.pi.coding.models.ModelRuntime
 import dev.pi.coding.prompt.LoadedResources
 import dev.pi.coding.prompt.SystemPromptInput
@@ -49,6 +50,12 @@ sealed interface SessionEvent {
     data class ModelChanged(val provider: String, val modelId: String, val thinkingLevel: String) : SessionEvent
 
     data class SessionError(val message: String) : SessionEvent
+
+    data class RetryScheduled(val attempt: Int, val delayMs: Long, val errorMessage: String?) : SessionEvent
+
+    data class RetrySucceeded(val attempt: Int) : SessionEvent
+
+    data class RetryExhausted(val attempts: Int, val errorMessage: String?) : SessionEvent
 }
 
 class CodingHooks(
@@ -72,6 +79,8 @@ class AgentSession internal constructor(
     private val scope: CoroutineScope,
 ) {
     private val sessionEvents = MutableSharedFlow<SessionEvent>(extraBufferCapacity = 1024)
+    private val entryIdsByMessage = mutableMapOf<AgentMessage, String>()
+    private var retryAttempt = 0
     private var sections: SystemPromptSections = initialSections
     private var closed = false
     private var internalUnsubscribe: (() -> Unit)? = null
@@ -122,7 +131,55 @@ class AgentSession internal constructor(
         }
         syncSystemPromptIfNeeded()
         agent.prompt(transformed, images)
+        runRetryLoop()
         sessionEvents.tryEmit(SessionEvent.Settled)
+    }
+
+    private suspend fun runRetryLoop() {
+        val retrySettings = settings.getRetrySettings()
+        while (true) {
+            val failed = lastAssistantError() ?: run {
+                if (retryAttempt > 0) {
+                    sessionEvents.tryEmit(SessionEvent.RetrySucceeded(retryAttempt))
+                    retryAttempt = 0
+                }
+                return
+            }
+            if (!retrySettings.enabled || retryAttempt >= retrySettings.maxRetries.toInt()) {
+                if (retryAttempt > 0) {
+                    sessionEvents.tryEmit(SessionEvent.RetryExhausted(retryAttempt, failed.errorMessage))
+                    retryAttempt = 0
+                }
+                return
+            }
+            if (!Retry.isRetryableAssistantError(failed)) return
+            retryAttempt += 1
+            val delayMs = Retry.retryDelayMs(retrySettings.baseDelayMs, retrySettings.maxAgentDelayMs, retryAttempt)
+            sessionEvents.tryEmit(SessionEvent.RetryScheduled(retryAttempt, delayMs, failed.errorMessage))
+            Retry.sleep(delayMs, null)
+            omitFailedTurn(failed)
+            agent.continueRun()
+        }
+    }
+
+    private fun lastAssistantError(): AssistantMessage? {
+        for (message in agent.state.messages.asReversed()) {
+            val assistant = message.asAssistantMessage() ?: continue
+            return if (assistant.stopReason == StopReason.Error) assistant else null
+        }
+        return null
+    }
+
+    private suspend fun omitFailedTurn(failed: AssistantMessage) {
+        val messages = agent.state.messages
+        while (messages.isNotEmpty()) {
+            val last = messages.last()
+            val lastAssistant = last.asAssistantMessage() ?: break
+            if (lastAssistant !== failed && lastAssistant.stopReason != StopReason.Error) break
+            messages.removeAt(messages.size - 1)
+            val entryId = entryIdsByMessage.remove(last)
+            if (entryId != null) sessionManager.appendContextEdit(entryId, null)
+        }
     }
 
     suspend fun steer(text: String, images: List<ImageContent>? = null) {
@@ -184,10 +241,10 @@ class AgentSession internal constructor(
             null -> return
             is SystemMessage -> return
             is AssistantMessage -> if (standard.stopReason != StopReason.Pending) {
-                sessionManager.appendMessage(standard)
+                entryIdsByMessage[message] = sessionManager.appendMessage(standard).id
             }
 
-            is Message -> sessionManager.appendMessage(standard)
+            is Message -> entryIdsByMessage[message] = sessionManager.appendMessage(standard).id
         }
     }
 

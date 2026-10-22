@@ -16,6 +16,14 @@ kotlin {
     jvmToolchain(21)
 
     sourceSets {
+        val unixMain = create("unixMain")
+        unixMain.dependsOn(commonMain.get())
+
+        jvmMain.get().dependsOn(unixMain)
+        androidMain.get().dependsOn(unixMain)
+
+        jvmTest.get().dependsOn(commonTest.get())
+
         commonMain.dependencies {
             api(project(":pi-agent"))
             api(libs.okio)
