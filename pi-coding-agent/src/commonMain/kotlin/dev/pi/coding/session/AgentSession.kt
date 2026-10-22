@@ -48,6 +48,7 @@ import dev.pi.coding.tools.CodingTool
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.channels.BufferOverflow
@@ -57,6 +58,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
@@ -169,10 +171,22 @@ class AgentSession internal constructor(
         return modelRuntime.completeSimple(request.model, context, options, signal)
     }
 
-    suspend fun compact(customInstructions: String? = null, signal: RunSignal? = null): CompactionResult? =
-        withContext(platformWorkDispatcher()) {
-            compactInternal(customInstructions, signal ?: operationSignal)
+    suspend fun compact(customInstructions: String? = null, signal: RunSignal? = null): CompactionResult? {
+        if (signal != null) {
+            return withContext(platformWorkDispatcher()) { compactInternal(customInstructions, signal) }
         }
+        if (activeOperation != null) {
+            abort()
+            waitForIdle()
+        }
+        return try {
+            runOperation(emitSettled = false) { operationSignal ->
+                compactInternal(customInstructions, operationSignal)
+            }
+        } catch (error: RequestAbortedException) {
+            null
+        }
+    }
 
     private suspend fun compactInternal(customInstructions: String?, signal: RunSignal?): CompactionResult? {
         val compactionSettings = this.settings.getCompactionSettings()
@@ -180,17 +194,23 @@ class AgentSession internal constructor(
         val branch = sessionManager.getBranch()
         val preparation = prepareCompaction(branch, compactionSettings, agent.state.model, customInstructions)
             ?: return null
+        sessionEvents.emit(SessionEvent.CompactionStarted(preparation.tokensBefore))
         val result = try {
             compact(preparation) { request ->
                 summarizeWithRuntime(request, signal ?: operationSignal)
             }
         } catch (error: RequestAbortedException) {
+            sessionEvents.emit(SessionEvent.CompactionFailed("Compaction aborted"))
             return null
         } catch (error: Exception) {
             sessionEvents.emit(SessionEvent.CompactionFailed(error.message))
-            throw error
-        } ?: return null
+            return null
+        } ?: run {
+            sessionEvents.emit(SessionEvent.CompactionFailed("Compaction aborted"))
+            return null
+        }
         applyCompaction(result)
+        sessionEvents.emit(SessionEvent.CompactionFinished(result.tokensBefore, result.estimatedTokensAfter))
         return result
     }
 
@@ -200,19 +220,10 @@ class AgentSession internal constructor(
         val messages = agent.state.messages.mapNotNull { it.asLlmMessage() }
         val tokens = estimateMessagesTokens(messages)
         if (!shouldCompact(tokens, agent.state.model.contextWindow, compactionSettings)) return
-        val result = try {
-            compactInternal(null, signal)
-        } catch (error: RequestAbortedException) {
-            return
-        } catch (error: Exception) {
-            sessionEvents.emit(SessionEvent.CompactionFailed(error.message))
-            return
-        } ?: return
-        sessionEvents.emit(SessionEvent.CompactionFinished(result.tokensBefore, result.estimatedTokensAfter))
+        compactInternal(null, signal)
     }
 
     private suspend fun applyCompaction(result: CompactionResult) {
-        sessionEvents.emit(SessionEvent.CompactionStarted(result.tokensBefore))
         val systemMessage = currentSystemMessage()
         sessionManager.appendCompaction(
             summary = result.summary,
@@ -223,7 +234,6 @@ class AgentSession internal constructor(
             systemMessage = systemMessage,
         )
         rebuildContextFromSession()
-        sessionEvents.emit(SessionEvent.CompactionFinished(result.tokensBefore, result.estimatedTokensAfter))
     }
 
     private suspend fun rebuildContextFromSession() {
@@ -257,6 +267,27 @@ class AgentSession internal constructor(
         return { job.cancel() }
     }
 
+    private suspend fun <T> runOperation(emitSettled: Boolean, block: suspend (RunSignal) -> T): T {
+        val operation = CompletableDeferred<Unit>()
+        val signal = RunSignal()
+        activeOperation = operation
+        operationSignal = signal
+        retryAttempt = 0
+        try {
+            return withContext(platformWorkDispatcher()) { block(signal) }
+        } finally {
+            operationSignal = null
+            activeOperation = null
+            retryAttempt = 0
+            operation.complete(Unit)
+            if (emitSettled) {
+                withContext(NonCancellable) {
+                    withTimeoutOrNull(5_000) { sessionEvents.emit(SessionEvent.Settled) }
+                }
+            }
+        }
+    }
+
     suspend fun prompt(text: String, images: List<ImageContent>? = null, behavior: QueueBehavior? = null) {
         check(!closed) { "Session is disposed" }
         if (activeOperation != null) {
@@ -270,21 +301,10 @@ class AgentSession internal constructor(
             }
             return
         }
-        val operation = CompletableDeferred<Unit>()
-        activeOperation = operation
-        val signal = RunSignal()
-        operationSignal = signal
         try {
-            withContext(platformWorkDispatcher()) {
-                runPrompt(text, images, signal)
-            }
+            runOperation(emitSettled = true) { signal -> runPrompt(text, images, signal) }
         } catch (error: RequestAbortedException) {
             Unit
-        } finally {
-            operationSignal = null
-            activeOperation = null
-            sessionEvents.emit(SessionEvent.Settled)
-            operation.complete(Unit)
         }
     }
 
@@ -333,14 +353,7 @@ class AgentSession internal constructor(
                 overflowRecoveryAttempted = true
                 omitFailedTurn(failed)
                 rebuildContextFromSession()
-                val compacted = try {
-                    compactInternal(null, signal)
-                } catch (error: RequestAbortedException) {
-                    return
-                } catch (error: Exception) {
-                    sessionEvents.emit(SessionEvent.CompactionFailed(error.message))
-                    null
-                }
+                val compacted = compactInternal(null, signal)
                 if (signal.isAborted) return
                 if (compacted != null) {
                     agent.continueRun()

@@ -41,7 +41,10 @@ import dev.pi.coding.tools.ShellExecutor
 import dev.pi.coding.tools.defaultCodingTools
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.SupervisorJob
+import dev.pi.ai.RunSignal
 import okio.FileSystem
 import okio.Path
 
@@ -105,15 +108,17 @@ suspend fun createAgentSession(options: AgentSessionOptions): AgentSession {
     val restoredModel = sessionContext.provider?.let { provider ->
         sessionContext.modelId?.let { modelId -> modelRuntime.getModel(provider, modelId) }
     }
+    val defaultResolved = resolver.resolveDefault()
     val model = explicitResolved?.model
         ?: restoredModel
-        ?: resolver.resolveDefault()?.model
+        ?: defaultResolved?.model
         ?: throw IllegalStateException(
             "No model configured. Pass AgentSessionOptions.model or set settings defaultProvider/defaultModel.",
         )
     val thinkingLevel: String = options.thinkingLevel
         ?: explicitResolved?.thinkingLevel
         ?: (if (options.model == null) sessionContext.thinkingLevel else null)
+        ?: (if (options.model == null && restoredModel == null) defaultResolved?.thinkingLevel else null)
         ?: settings.getModelThinkingLevel(model.provider, model.id)
         ?: settings.getDefaultThinkingLevel()
         ?: "off"
@@ -273,11 +278,14 @@ class AgentSessionRuntime private constructor(
         val oldLeafId = source.sessionManager.getLeafId()
         val targetId = entryId ?: oldLeafId
         val branched = source.sessionManager.createBranchedSession(targetId)
-        if (summarizeAbandonedBranch && oldLeafId != null && targetId != null && oldLeafId != targetId) {
-            appendBranchSummary(branched, source, oldLeafId, targetId)
+        try {
+            if (summarizeAbandonedBranch && oldLeafId != null && targetId != null && oldLeafId != targetId) {
+                appendBranchSummary(branched, source, oldLeafId, targetId)
+            }
+        } finally {
+            source.close()
         }
         val file = branched.sessionFile
-        source.close()
         session = createAgentSession(options.copy(sessionFile = file))
         return session
     }
@@ -295,19 +303,29 @@ class AgentSessionRuntime private constructor(
         val collected = collectEntriesForBranchSummary(source.sessionManager, oldLeafId, targetId)
         if (collected.entries.isEmpty()) return
         val model = source.model
+        val signal = RunSignal()
+        val cancellation = currentCoroutineContext()[Job]?.invokeOnCompletion { cause ->
+            if (cause != null) signal.abort("branch summary cancelled")
+        }
         val summarize = dev.pi.coding.compaction.Summarize { request ->
             source.modelRuntime.completeSimple(
                 request.model,
                 Context(systemPrompt = request.systemPrompt, messages = request.messages),
-                SimpleStreamOptions(stream = StreamOptions(cacheRetention = CacheRetention.None)),
-                null,
+                SimpleStreamOptions(
+                    stream = StreamOptions(cacheRetention = CacheRetention.None, signal = signal),
+                ),
+                signal,
             )
         }
-        val result = generateBranchSummary(
-            collected.entries,
-            GenerateBranchSummaryOptions(model = model),
-            summarize,
-        )
+        val result = try {
+            generateBranchSummary(
+                collected.entries,
+                GenerateBranchSummaryOptions(model = model),
+                summarize,
+            )
+        } finally {
+            cancellation?.dispose()
+        }
         val summary = result.summary ?: return
         val details = dev.pi.coding.compaction.BranchSummaryDetails(
             readFiles = result.readFiles.orEmpty(),

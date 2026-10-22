@@ -23,18 +23,24 @@ class CloudflareAuthResolver(
             ?: credential?.key?.takeIf { it.isNotBlank() }
             ?: envValue(CLOUDFLARE_API_KEY_ENV, overrides)
             ?: return null
-        credential?.env?.get(CLOUDFLARE_ACCOUNT_ID_ENV)?.takeIf { it.isNotBlank() }
+        val accountId = credential?.env?.get(CLOUDFLARE_ACCOUNT_ID_ENV)?.takeIf { it.isNotBlank() }
             ?: envValue(CLOUDFLARE_ACCOUNT_ID_ENV, overrides)
             ?: return null
         val source = if (credential != null) "stored credential" else CLOUDFLARE_API_KEY_ENV
+        val resolvedEnv = linkedMapOf(
+            CLOUDFLARE_API_KEY_ENV to apiKey,
+            CLOUDFLARE_ACCOUNT_ID_ENV to accountId,
+        )
         if (kind == CloudflareAuthKind.WorkersAi) {
-            return ResolvedAuth(apiKey = apiKey, source = source)
+            return ResolvedAuth(apiKey = apiKey, source = source, env = resolvedEnv)
         }
         val gatewayId = credential?.env?.get(CLOUDFLARE_GATEWAY_ID_ENV)?.takeIf { it.isNotBlank() }
             ?: envValue(CLOUDFLARE_GATEWAY_ID_ENV, overrides)
             ?: return null
+        resolvedEnv[CLOUDFLARE_GATEWAY_ID_ENV] = gatewayId
         val gatewayToken = credential?.env?.get(CLOUDFLARE_GATEWAY_TOKEN_ENV)?.takeIf { it.isNotBlank() }
             ?: envValue(CLOUDFLARE_GATEWAY_TOKEN_ENV, overrides)
+        if (gatewayToken != null) resolvedEnv[CLOUDFLARE_GATEWAY_TOKEN_ENV] = gatewayToken
         val headers = if (gatewayToken != null) {
             linkedMapOf(
                 "cf-aig-authorization" to "Bearer $gatewayToken",
@@ -43,7 +49,7 @@ class CloudflareAuthResolver(
         } else {
             linkedMapOf("cf-aig-authorization" to "Bearer $apiKey")
         }
-        return ResolvedAuth(apiKey = null, headers = headers, source = source)
+        return ResolvedAuth(apiKey = null, headers = headers, source = source, env = resolvedEnv)
     }
 
     private fun envValue(name: String, overrides: AuthOverrides?): String? =

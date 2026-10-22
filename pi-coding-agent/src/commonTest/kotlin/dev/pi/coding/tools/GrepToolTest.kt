@@ -65,6 +65,18 @@ class GrepToolTest {
     }
 
     @Test
+    fun streamingContextMergesOverlappingMatches() = runTest {
+        withTempDir { root ->
+            fs.writeText(root, "a.txt", "line1\nhit\nline3\nhit\nline5\n")
+            val result = runTool(grepTool(root, fs), args("pattern" to "hit", "context" to 1))
+            assertEquals(
+                "a.txt-1- line1\na.txt:2: hit\na.txt-3- line3\na.txt:4: hit\na.txt-5- line5",
+                result.text(),
+            )
+        }
+    }
+
+    @Test
     fun limitReachedNotice() = runTest {
         withTempDir { root ->
             fs.writeText(root, "a.txt", "hit\nhit\nhit\nhit\nhit\n")

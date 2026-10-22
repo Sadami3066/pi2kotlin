@@ -49,6 +49,7 @@ fun findTool(cwd: Path, fs: FileSystem): CodingTool = CodingTool(
         val searchMetadata = fs.metadataOrNull(searchPath)
             ?: throw IllegalArgumentException("Path not found: $searchPath")
         val matcher = buildFileGlobMatcher(pattern)
+        val ignoreRoot = if (toolRelativePath(cwd, searchPath) != null) cwd else searchPath
 
         val results = mutableListOf<String>()
         val collectFile: suspend (Path) -> Boolean = { file ->
@@ -65,7 +66,7 @@ fun findTool(cwd: Path, fs: FileSystem): CodingTool = CodingTool(
             walkToolFilesStreaming(
                 fs = fs,
                 root = searchPath,
-                hierarchy = GitIgnoreHierarchy(fs, searchPath),
+                hierarchy = GitIgnoreHierarchy(fs, ignoreRoot),
                 signal = signal,
                 filter = null,
             ) { file -> collectFile(file) }

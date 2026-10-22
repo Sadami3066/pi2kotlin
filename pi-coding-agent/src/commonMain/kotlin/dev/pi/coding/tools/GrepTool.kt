@@ -14,6 +14,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import okio.FileSystem
 import okio.Path
+import okio.buffer
 
 private const val GREP_DEFAULT_LIMIT = 100
 private const val TOOLS_MAX_BYTES = 51200
@@ -55,7 +56,11 @@ private val toolsGrepParameters: JsonObject = buildJsonObject {
     put("required", buildJsonArray { add(JsonPrimitive("pattern")) })
 }
 
-fun grepTool(cwd: Path, fs: FileSystem): CodingTool = CodingTool(
+fun grepTool(
+    cwd: Path,
+    fs: FileSystem,
+    maxScanFileBytes: Long = MAX_SCAN_FILE_BYTES,
+): CodingTool = CodingTool(
     name = "grep",
     description = "Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to $GREP_DEFAULT_LIMIT matches or ${TOOLS_MAX_BYTES / 1024}KB (whichever is hit first). Long lines are truncated to $GREP_MAX_LINE_LENGTH chars.",
     parameters = toolsGrepParameters,
@@ -78,56 +83,37 @@ fun grepTool(cwd: Path, fs: FileSystem): CodingTool = CodingTool(
         val searchingDirectory = searchMetadata.isDirectory
         val matches = buildMatcher(pattern, ignoreCase, literal)
         val fileFilter = globPattern?.takeIf { it.isNotEmpty() }?.let(::buildGrepGlobMatcher)
+        val ignoreRoot = if (toolRelativePath(cwd, searchPath) != null) cwd else searchPath
 
         val outputLines = mutableListOf<String>()
         var matchCount = 0
+        var skippedFiles = 0
         var linesTruncated = false
 
         val scanFile: suspend (Path) -> Boolean = { file ->
             signal?.throwIfAborted()
             val size = fs.metadataOrNull(file)?.size
-            val scannable = size == null || size <= MAX_SCAN_FILE_BYTES
-            if (scannable) {
-                val text = runCatching { fs.read(file) { readUtf8() } }.getOrNull()
-                if (text != null && text.indexOf('\u0000') < 0) {
-                    val fileLines = text.split("\n").let { lines ->
-                        if (lines.isNotEmpty() && lines.last().isEmpty()) lines.dropLast(1) else lines
-                    }
-                    val displayPath = grepDisplayPath(searchPath, file, searchingDirectory)
-                    for (index in fileLines.indices) {
-                        if (index % LINE_SIGNAL_CHECK_INTERVAL == 0) signal?.throwIfAborted()
-                        val line = fileLines[index].removeSuffix("\r")
-                        if (!matches(line)) {
-                            continue
-                        }
-                        matchCount++
-                        if (contextLines == 0) {
-                            val truncated = truncateGrepLine(line)
-                            if (truncated.second) {
-                                linesTruncated = true
-                            }
-                            outputLines += "$displayPath:${index + 1}: ${truncated.first}"
-                        } else {
-                            val start = (index - contextLines).coerceAtLeast(0)
-                            val end = (index + contextLines).coerceAtMost(fileLines.size - 1)
-                            for (current in start..end) {
-                                val rawLine = fileLines[current].removeSuffix("\r")
-                                val truncated = truncateGrepLine(rawLine)
-                                if (truncated.second) {
-                                    linesTruncated = true
-                                }
-                                val lineNumber = current + 1
-                                if (current == index) {
-                                    outputLines += "$displayPath:$lineNumber: ${truncated.first}"
-                                } else {
-                                    outputLines += "$displayPath-$lineNumber- ${truncated.first}"
-                                }
-                            }
-                        }
-                        if (matchCount >= limit) {
-                            break
-                        }
-                    }
+            if (size != null && size > maxScanFileBytes) {
+                skippedFiles++
+            } else {
+                scanGrepFile(
+                    fs = fs,
+                    file = file,
+                    displayPath = grepDisplayPath(searchPath, file, searchingDirectory),
+                    matches = matches,
+                    contextLines = contextLines,
+                    limit = limit,
+                    signal = signal,
+                    outputLines = outputLines,
+                    state = GrepScanState(
+                        matchCount = matchCount,
+                        linesTruncated = linesTruncated,
+                        skippedFiles = skippedFiles,
+                    ),
+                ).let { result ->
+                    matchCount = result.matchCount
+                    linesTruncated = result.linesTruncated
+                    skippedFiles = result.skippedFiles
                 }
             }
             matchCount < limit
@@ -137,7 +123,7 @@ fun grepTool(cwd: Path, fs: FileSystem): CodingTool = CodingTool(
             walkToolFilesStreaming(
                 fs = fs,
                 root = searchPath,
-                hierarchy = GitIgnoreHierarchy(fs, searchPath),
+                hierarchy = GitIgnoreHierarchy(fs, ignoreRoot),
                 signal = signal,
                 filter = fileFilter,
             ) { file -> scanFile(file) }
@@ -147,7 +133,7 @@ fun grepTool(cwd: Path, fs: FileSystem): CodingTool = CodingTool(
 
         val matchLimitReached = matchCount >= limit
         if (matchCount == 0) {
-            textResult("No matches found")
+            textResult(noMatchesText(skippedFiles, maxScanFileBytes))
         } else {
             val rawOutput = outputLines.joinToString("\n")
             val truncation = truncateHead(rawOutput, maxLines = Int.MAX_VALUE, maxBytes = TOOLS_MAX_BYTES)
@@ -169,6 +155,110 @@ fun grepTool(cwd: Path, fs: FileSystem): CodingTool = CodingTool(
         }
     },
 )
+
+private class GrepScanState(
+    val matchCount: Int,
+    val linesTruncated: Boolean,
+    val skippedFiles: Int,
+)
+
+private class GrepScanResult(
+    val matchCount: Int,
+    val linesTruncated: Boolean,
+    val skippedFiles: Int,
+)
+
+private suspend fun scanGrepFile(
+    fs: FileSystem,
+    file: Path,
+    displayPath: String,
+    matches: (String) -> Boolean,
+    contextLines: Int,
+    limit: Int,
+    signal: dev.pi.ai.RunSignal?,
+    outputLines: MutableList<String>,
+    state: GrepScanState,
+): GrepScanResult {
+    val source = runCatching { fs.source(file).buffer() }.getOrNull() ?: return GrepScanResult(
+        state.matchCount,
+        state.linesTruncated,
+        state.skippedFiles,
+    )
+    val fileStartOutput = outputLines.size
+    val fileStartMatches = state.matchCount
+    val fileStartTruncated = state.linesTruncated
+    val ring = ArrayDeque<Pair<Int, String>>()
+    var afterRemaining = 0
+    var lastEmitted = 0
+    var matchCount = state.matchCount
+    var linesTruncated = state.linesTruncated
+    var binary = false
+    try {
+        var lineNumber = 0
+        while (true) {
+            val raw = source.readUtf8Line() ?: break
+            lineNumber++
+            if (lineNumber % LINE_SIGNAL_CHECK_INTERVAL == 0) signal?.throwIfAborted()
+            val line = raw.removeSuffix("\r")
+            if (line.indexOf('\u0000') >= 0) {
+                binary = true
+                break
+            }
+            val lineMatches = matches(line)
+            if (contextLines == 0) {
+                if (!lineMatches) continue
+                val truncated = truncateGrepLine(line)
+                if (truncated.second) linesTruncated = true
+                outputLines += "$displayPath:$lineNumber: ${truncated.first}"
+                matchCount++
+                if (matchCount >= limit) break
+            } else {
+                if (lineMatches) {
+                    for ((pendingNumber, pendingLine) in ring) {
+                        if (pendingNumber <= lastEmitted) continue
+                        val truncated = truncateGrepLine(pendingLine)
+                        if (truncated.second) linesTruncated = true
+                        outputLines += "$displayPath-$pendingNumber- ${truncated.first}"
+                        lastEmitted = pendingNumber
+                    }
+                    val truncated = truncateGrepLine(line)
+                    if (truncated.second) linesTruncated = true
+                    outputLines += "$displayPath:$lineNumber: ${truncated.first}"
+                    lastEmitted = lineNumber
+                    matchCount++
+                    afterRemaining = contextLines
+                    if (matchCount >= limit) break
+                } else if (afterRemaining > 0) {
+                    val truncated = truncateGrepLine(line)
+                    if (truncated.second) linesTruncated = true
+                    outputLines += "$displayPath-$lineNumber- ${truncated.first}"
+                    lastEmitted = lineNumber
+                    afterRemaining--
+                }
+                ring.addLast(lineNumber to line)
+                while (ring.size > contextLines) {
+                    ring.removeFirst()
+                }
+            }
+        }
+    } finally {
+        runCatching { source.close() }
+    }
+    if (binary) {
+        while (outputLines.size > fileStartOutput) {
+            outputLines.removeAt(outputLines.size - 1)
+        }
+        matchCount = fileStartMatches
+        linesTruncated = fileStartTruncated
+    }
+    return GrepScanResult(matchCount, linesTruncated, state.skippedFiles)
+}
+
+private fun noMatchesText(skippedFiles: Int, maxScanFileBytes: Long): String {
+    if (skippedFiles <= 0) return "No matches found"
+    val limitBytes = maxScanFileBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+    return "No matches found ($skippedFiles file(s) skipped: larger than ${formatToolSize(limitBytes)})"
+}
 
 internal fun JsonObject.toolStringOrNull(name: String): String? = (this[name] as? JsonPrimitive)?.contentOrNull
 

@@ -116,6 +116,83 @@ class GrepFindIgnoreTest {
     }
 
     @Test
+    fun grepSubdirectoryInheritsParentGitignore() = runTest {
+        withFixtureDir { root ->
+            fs.writeFixture(root, ".gitignore", "*.log\n")
+            fs.writeFixture(root, "src/debug.log", "needle\n")
+            fs.writeFixture(root, "src/main.txt", "needle\n")
+            val result = runFixtureTool(grepTool(root, fs), fixtureArgs("pattern" to "needle", "path" to "src"))
+            assertEquals("main.txt:1: needle", result.text())
+        }
+    }
+
+    @Test
+    fun grepSubdirectoryWithoutParentGitignoreIsSearched() = runTest {
+        withFixtureDir { root ->
+            fs.writeFixture(root, "src/debug.log", "needle\n")
+            val result = runFixtureTool(grepTool(root, fs), fixtureArgs("pattern" to "needle", "path" to "src"))
+            assertEquals("debug.log:1: needle", result.text())
+        }
+    }
+
+    @Test
+    fun findSubdirectoryInheritsParentGitignore() = runTest {
+        withFixtureDir { root ->
+            fs.writeFixture(root, ".gitignore", "*.log\n")
+            fs.writeFixture(root, "src/debug.log", "a")
+            fs.writeFixture(root, "src/main.txt", "b")
+            val result = runFixtureTool(findTool(root, fs), fixtureArgs("pattern" to "*.log", "path" to "src"))
+            assertEquals("No files found matching pattern", result.text())
+        }
+    }
+
+    @Test
+    fun searchPathOutsideCwdUsesItsOwnHierarchyRoot() = runTest {
+        withFixtureDir { cwdRoot ->
+            val outside = FileSystem.SYSTEM_TEMPORARY_DIRECTORY /
+                "pi-ignore-outside-${Random.nextLong().toString().replace("-", "")}"
+            fs.createDirectories(outside)
+            try {
+                fs.writeFixture(outside, ".gitignore", "*.log\n")
+                fs.writeFixture(outside, "debug.log", "needle\n")
+                fs.writeFixture(outside, "main.txt", "needle\n")
+                val result = runFixtureTool(
+                    grepTool(cwdRoot, fs),
+                    fixtureArgs("pattern" to "needle", "path" to outside.toString()),
+                )
+                assertEquals("main.txt:1: needle", result.text())
+            } finally {
+                fs.deleteRecursively(outside)
+            }
+        }
+    }
+
+    @Test
+    fun largeFileSkippedIsReported() = runTest {
+        withFixtureDir { root ->
+            fs.writeFixture(root, "big.txt", "x".repeat(100))
+            val result = runFixtureTool(
+                grepTool(root, fs, maxScanFileBytes = 64),
+                fixtureArgs("pattern" to "needle"),
+            )
+            assertEquals("No matches found (1 file(s) skipped: larger than 64B)", result.text())
+        }
+    }
+
+    @Test
+    fun largeFileSkipDoesNotHideMatches() = runTest {
+        withFixtureDir { root ->
+            fs.writeFixture(root, "big.txt", "x".repeat(100))
+            fs.writeFixture(root, "small.txt", "needle\n")
+            val result = runFixtureTool(
+                grepTool(root, fs, maxScanFileBytes = 64),
+                fixtureArgs("pattern" to "needle"),
+            )
+            assertEquals("small.txt:1: needle", result.text())
+        }
+    }
+
+    @Test
     fun grepStopsEarlyAtLimit() = runTest {
         withFixtureDir { root ->
             for (index in 1..120) {

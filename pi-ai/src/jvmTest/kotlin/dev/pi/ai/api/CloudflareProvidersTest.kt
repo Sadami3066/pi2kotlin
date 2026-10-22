@@ -1,13 +1,27 @@
 package dev.pi.ai.api
 
+import dev.pi.ai.AssistantMessage
+import dev.pi.ai.AssistantMessageEventStream
 import dev.pi.ai.Context
+import dev.pi.ai.ErrorEvent
 import dev.pi.ai.Model
 import dev.pi.ai.ModelCatalog
+import dev.pi.ai.ModelCost
+import dev.pi.ai.ModelInputModality
 import dev.pi.ai.Models
 import dev.pi.ai.Provider
 import dev.pi.ai.SimpleStreamOptions
+import dev.pi.ai.StopReason
 import dev.pi.ai.StreamOptions
+import dev.pi.ai.Usage
+import dev.pi.ai.api.ApiProvider
+import dev.pi.ai.auth.AuthContext
+import dev.pi.ai.auth.AuthEnvironment
+import dev.pi.ai.auth.AuthOverrides
+import dev.pi.ai.auth.AuthResolver
 import dev.pi.ai.auth.FileCredentialStore
+import dev.pi.ai.auth.ResolvedAuth
+import dev.pi.ai.createAssistantMessageEventStream
 import dev.pi.ai.http.HttpRequest
 import dev.pi.ai.http.HttpResponse
 import dev.pi.ai.http.HttpTransport
@@ -327,6 +341,185 @@ class CloudflareProvidersTest {
         assertEquals("Bearer gateway-token", request.headers["cf-aig-authorization"])
         assertEquals("Bearer cf-provider-key", request.headers["Authorization"])
         assertNull(request.headers["x-api-key"])
+    }
+
+    @Test
+    fun systemEnvironmentAloneMaterializesWorkersAiUrlAndAuthorization() = withServer { server ->
+        server.enqueue(okResponse(openAiSse()))
+        val transport = MockTransport()
+        val base = serverBaseUrl(server)
+        val previousContext = AuthEnvironment.context
+        AuthEnvironment.context = AuthContext { name ->
+            when (name) {
+                "CLOUDFLARE_API_KEY" -> "sys-key"
+                CLOUDFLARE_ACCOUNT_ID_ENV -> "sys-acc"
+                else -> null
+            }
+        }
+        try {
+            val model = catalogModel(
+                "cloudflare-workers-ai",
+                "openai-completions",
+                "$base/client/v4/accounts/{$CLOUDFLARE_ACCOUNT_ID_ENV}/ai/v1",
+            )
+            val provider = cloudflareProvider(
+                "cloudflare-workers-ai",
+                CloudflareAuthKind.WorkersAi,
+                "openai-completions",
+                model,
+                transport,
+            )
+            val models = Models()
+            models.setProvider(provider)
+
+            runSimple(models, model, SimpleStreamOptions(stream = StreamOptions()))
+
+            val request = assertNotNull(transport.lastRequest)
+            assertEquals("$base/client/v4/accounts/sys-acc/ai/v1/chat/completions", request.url)
+            assertEquals("Bearer sys-key", request.headers["Authorization"])
+        } finally {
+            AuthEnvironment.context = previousContext
+        }
+    }
+
+    @Test
+    fun systemEnvironmentAloneMaterializesGatewayUrlAndCfAigHeader() = withServer { server ->
+        server.enqueue(okResponse(openAiSse()))
+        val transport = MockTransport()
+        val base = serverBaseUrl(server)
+        val previousContext = AuthEnvironment.context
+        AuthEnvironment.context = AuthContext { name ->
+            when (name) {
+                "CLOUDFLARE_API_KEY" -> "sys-key"
+                CLOUDFLARE_ACCOUNT_ID_ENV -> "sys-acc"
+                CLOUDFLARE_GATEWAY_ID_ENV -> "sys-gw"
+                else -> null
+            }
+        }
+        try {
+            val model = catalogModel(
+                "cloudflare-ai-gateway",
+                "openai-completions",
+                "$base/v1/{$CLOUDFLARE_ACCOUNT_ID_ENV}/{$CLOUDFLARE_GATEWAY_ID_ENV}/compat",
+            )
+            val provider = cloudflareProvider(
+                "cloudflare-ai-gateway",
+                CloudflareAuthKind.AiGateway,
+                "openai-completions",
+                model,
+                transport,
+            )
+            val models = Models()
+            models.setProvider(provider)
+
+            runSimple(models, model, SimpleStreamOptions(stream = StreamOptions()))
+
+            val request = assertNotNull(transport.lastRequest)
+            assertEquals("$base/v1/sys-acc/sys-gw/compat/chat/completions", request.url)
+            assertEquals("Bearer sys-key", request.headers["cf-aig-authorization"])
+            assertNull(request.headers["Authorization"])
+            assertNull(request.headers["x-api-key"])
+        } finally {
+            AuthEnvironment.context = previousContext
+        }
+    }
+
+    @Test
+    fun modelsMergeResolvedAuthEnvIntoTransformAndApiOptions() = runBlocking {
+        val transformEnv = mutableListOf<Map<String, String>?>()
+        val apiEnv = mutableListOf<Map<String, String>?>()
+        val dispatchedBaseUrls = mutableListOf<String>()
+        val recordingApi = object : ApiProvider {
+            override val api: String = "recording-api"
+
+            override suspend fun stream(
+                model: Model,
+                context: dev.pi.ai.TranscriptContext,
+                options: StreamOptions,
+            ): AssistantMessageEventStream {
+                apiEnv.add(options.env)
+                dispatchedBaseUrls.add(model.baseUrl)
+                val stream = createAssistantMessageEventStream()
+                stream.push(
+                    ErrorEvent(
+                        StopReason.Error,
+                        AssistantMessage(
+                            content = mutableListOf(),
+                            api = model.api,
+                            provider = model.provider,
+                            model = model.id,
+                            usage = Usage.empty(),
+                            stopReason = StopReason.Error,
+                            timestamp = 0,
+                            errorMessage = "recorded",
+                        ),
+                    ),
+                )
+                stream.end()
+                return stream
+            }
+
+            override suspend fun streamSimple(
+                model: Model,
+                context: dev.pi.ai.TranscriptContext,
+                options: SimpleStreamOptions,
+            ): AssistantMessageEventStream = stream(model, context, options.stream)
+        }
+        val model = Model(
+            id = "recording-model",
+            name = "Recording Model",
+            api = "recording-api",
+            provider = "env-provider",
+            baseUrl = "https://original.example/v1",
+            input = listOf(ModelInputModality.Text),
+            cost = ModelCost(0.0, 0.0, 0.0, 0.0),
+            reasoning = false,
+            contextWindow = 1000,
+            maxTokens = 100,
+        )
+        val provider = Provider(
+            id = "env-provider",
+            name = "Env Provider",
+            apiProviders = mapOf("recording-api" to { recordingApi }),
+            models = listOf(model),
+            auth = object : AuthResolver {
+                override suspend fun resolve(overrides: AuthOverrides?): ResolvedAuth =
+                    ResolvedAuth(
+                        apiKey = "sk-auth",
+                        source = "test",
+                        env = mapOf(
+                            "AUTH_ENV" to "auth-value",
+                            "SHARED_ENV" to "from-auth",
+                        ),
+                    )
+            },
+            modelTransform = { transformed, env ->
+                transformEnv.add(env)
+                (transformed as Model).copy(baseUrl = "https://transformed.example/v1")
+            },
+        )
+        val models = Models()
+        models.setProvider(provider)
+
+        withTimeout(10_000) {
+            models.stream(
+                model,
+                Context(messages = emptyList()),
+                StreamOptions(
+                    apiKey = "explicit-key",
+                    env = mapOf("OPTION_ENV" to "option-value", "SHARED_ENV" to "from-options"),
+                ),
+            ).result()
+        }
+
+        val expectedEnv = mapOf(
+            "AUTH_ENV" to "auth-value",
+            "SHARED_ENV" to "from-options",
+            "OPTION_ENV" to "option-value",
+        )
+        assertEquals(expectedEnv, assertNotNull(transformEnv.single()))
+        assertEquals(expectedEnv, assertNotNull(apiEnv.single()))
+        assertEquals("https://transformed.example/v1", dispatchedBaseUrls.single())
     }
 
     @Test

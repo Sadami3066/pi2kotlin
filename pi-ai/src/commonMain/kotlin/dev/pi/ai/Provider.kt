@@ -80,10 +80,10 @@ class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()
         val provider = requireProvider(model)
         val transcript = normalizeContext(context)
         val resolved = resolveAuth(provider, options)
-        val dispatchModel = transformModel(provider, model, options?.env) as? Model ?: model
+        val applied = applyAuthOptions(provider, resolved, options)
+        val dispatchModel = transformModel(provider, model, applied.env) as? Model ?: model
         val api = createApiProvider(provider, dispatchModel)
         signal?.throwIfAborted()
-        val applied = applyAuthOptions(provider, resolved, options)
         return api.stream(dispatchModel, transcript, applied.copy(signal = signal ?: applied.signal))
     }
 
@@ -105,10 +105,10 @@ class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()
         val transcript = normalizeContext(context)
         val streamOptions = options?.stream ?: StreamOptions()
         val resolved = resolveAuth(provider, streamOptions)
-        val dispatchModel = transformModel(provider, model, streamOptions.env) as? Model ?: model
+        val applied = applyAuthOptions(provider, resolved, streamOptions)
+        val dispatchModel = transformModel(provider, model, applied.env) as? Model ?: model
         val api = createApiProvider(provider, dispatchModel)
         signal?.throwIfAborted()
-        val applied = applyAuthOptions(provider, resolved, streamOptions)
         return api.streamSimple(
             dispatchModel,
             transcript,
@@ -133,8 +133,9 @@ class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()
             ?: throw IllegalStateException("Provider ${provider.id} does not support image generation")
         val resolved = getAuth(model, AuthOverrides(apiKey = options?.apiKey, env = options?.env))
             ?: throw IllegalStateException("Provider is not configured: ${model.provider}")
-        val dispatchModel = transformModel(provider, model, options?.env) as? ImageModel ?: model
-        imagesApi().generateImages(dispatchModel, context, applyImagesOptions(resolved, options))
+        val applied = applyImagesOptions(resolved, options)
+        val dispatchModel = transformModel(provider, model, applied.env) as? ImageModel ?: model
+        imagesApi().generateImages(dispatchModel, context, applied)
     } catch (error: CancellationException) {
         throw error
     } catch (error: Throwable) {
@@ -160,8 +161,9 @@ class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()
             )
         val resolved = getAuth(model, AuthOverrides(apiKey = options?.apiKey, env = options?.env))
             ?: throw IllegalStateException("Provider is not configured: ${model.provider}")
-        val dispatchModel = transformModel(provider, model, options?.env) as? ClassifierModel ?: model
-        classifierApi().classify(dispatchModel, context, applyClassifierOptions(resolved, options))
+        val applied = applyClassifierOptions(resolved, options)
+        val dispatchModel = transformModel(provider, model, applied.env) as? ClassifierModel ?: model
+        classifierApi().classify(dispatchModel, context, applied)
     } catch (error: CancellationException) {
         throw error
     } catch (error: Throwable) {
@@ -184,6 +186,7 @@ class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()
         return source.copy(
             apiKey = source.apiKey ?: resolved.apiKey,
             headers = mergeHeaders(resolved.headers, source.headers),
+            env = mergeEnv(resolved.env, source.env),
         )
     }
 
@@ -192,6 +195,7 @@ class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()
         return source.copy(
             apiKey = source.apiKey ?: resolved.apiKey,
             headers = mergeHeaders(resolved.headers, source.headers),
+            env = mergeEnv(resolved.env, source.env),
         )
     }
 
@@ -206,7 +210,16 @@ class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()
         return source.copy(
             apiKey = apiKey,
             headers = mergeHeaders(mergeHeaders(provider.headers, resolved.headers), source.headers),
+            env = mergeEnv(resolved.env, source.env),
         )
+    }
+
+    private fun mergeEnv(resolvedEnv: Map<String, String>, requestEnv: Map<String, String>?): Map<String, String>? {
+        if (resolvedEnv.isEmpty() && requestEnv.isNullOrEmpty()) return null
+        val merged = linkedMapOf<String, String>()
+        resolvedEnv.forEach { (name, value) -> merged[name] = value }
+        requestEnv?.forEach { (name, value) -> merged[name] = value }
+        return merged.ifEmpty { null }
     }
 
     private fun transformModel(provider: Provider, model: AnyModel, env: Map<String, String>?): AnyModel =

@@ -140,3 +140,19 @@ AgentMessage/AgentEvent、双层 agent loop、并行/串行工具执行、hooks�
 | 发布不一致 | 版本统一 `0.1.0`；`jvmToolchain(17)` 产物 class major=61；双语 README、LICENSE、RELEASE 文档 | `scripts/verify-release.mjs` 32/32 PASS；`scripts/release-local.sh` 全流程通过 |
 
 测试不足项同步补齐：固定 JSONL/协议 fixture（TS 格式手写，默认可运行）、真实数据扫描改 `PI2K_REAL_SESSIONS_DIR` opt-in、SDK 组合场景 18 tests。
+
+## 复核第二轮（0.1.1）
+
+对外部 review 在 `b520ce2` / `v0.1.0` 上提出的 8 项问题逐条修复（Android Demo 真机项按用户要求不处理）：
+
+| 项 | 问题 | 修复 | 验证 |
+|---|---|---|---|
+| P1 | Cloudflare 系统环境变量未进入 URL 替换 | `ResolvedAuth.env` 携带认证阶段解析出的 account/gateway/token；Models 先 resolveAuth → 合并 env（caller 优先）→ transformModel → 分发 | 新增 3 个"仅系统环境变量"用例（workers-ai / gateway URL + headers）；pi-ai 628 tests |
+| P1 | 手动 `compact()` 未登记为会话操作，fork 分支摘要 signal 为 null | 新增 `runOperation`：prompt / 手动 compact 统一登记 activeOperation + RunSignal（busy/abort/waitForIdle/close 全覆盖）；手动压缩在忙时先 abort+waitForIdle；fork 分支摘要建独立 RunSignal 并绑定协程取消，`finally` 关闭源会话 | `OperationLifecycleScenarioTest`：压缩中 isBusy、waitForIdle 等待、abort 返回 null 且 Started/Failed 各 1、无 Finished |
+| P1 | 完成信号在可取消 emit 之后，背压下永久挂起 | `finally` 中先 `operation.complete()`，再 `NonCancellable + withTimeoutOrNull(5s)` 发送 Settled | 慢订阅者 + 缓冲区填满 + 取消 prompt 后 `waitForIdle()` 在超时内返回 |
+| P2 | 子目录搜索不继承上层 .gitignore | 忽略层级根改为 cwd（searchPath 在 cwd 内时）；searchPath 在 cwd 外仍用自身为根 | 新增 3 个继承用例 + cwd 外根语义；51 tools tests |
+| P2 | 默认模型解析丢弃 thinking 后缀 | `resolveDefault()` 只解析一次，其 thinkingLevel 参与优先级链 | `enabledModels:["faux/faux-1:high"]` 且无显式 model → `thinkingLevel=="high"` |
+| P2 | 阈值压缩重复 Finished、Started 过晚 | Started 在摘要前发送；Finished/Failed 只在 `compactInternal` 发一次；`applyCompaction` 不再发事件 | 阈值压缩用例断言 Started=1 / Finished=1 / Failed=0，CompactionEntry=1 |
+| P2 | 中止重试后 retryAttempt 泄漏到下一轮 | `runOperation` 进入与退出都重置 retryAttempt | 第一轮重试等待中 abort，第二轮仍能重试一次并成功 |
+| — | grep >16MiB 静默跳过、整文件读取 | 改为流式逐行读取 + 上下文环形缓冲；跳过计数，无匹配时明确提示 skipped；重叠 context 合并 | 大文件跳过提示/有匹配不影响用例；跨行重叠合并用例 |
+| — | `verify-release.mjs` sources 路径错误、只检查第一个 class | sources jar 路径修正并新增 android sources 检查；抽样/全量检查 class major | 0.1.1 发布校验 35/35 PASS |

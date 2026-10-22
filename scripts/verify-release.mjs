@@ -4,7 +4,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const version = process.argv[2] ?? "0.1.0";
+const version = process.argv[2] ?? "0.1.1";
 const m2 = join(homedir(), ".m2", "repository", "dev", "pi");
 const modules = ["pi-ai", "pi-agent", "pi-coding-agent"];
 const expectedClassMajor = 61;
@@ -17,9 +17,10 @@ function check(name, ok, detail) {
   if (!ok) failures += 1;
 }
 
-function artifactPath(module, suffix, ext) {
+function artifactPath(module, suffix, ext, classifier) {
   const dir = join(m2, `${module}-${suffix}`, version);
-  return join(dir, `${module}-${suffix}-${version}.${ext}`);
+  const suffixPart = classifier ? `-${classifier}` : "";
+  return join(dir, `${module}-${suffix}-${version}${suffixPart}.${ext}`);
 }
 
 function unzipList(zipFile) {
@@ -34,28 +35,33 @@ function unzipBytes(zipFile, entry) {
 
 for (const module of modules) {
   const jar = artifactPath(module, "jvm", "jar");
-  const sources = artifactPath(module, "jvm", "jar");
+  const sources = artifactPath(module, "jvm", "jar", "sources");
   const pom = artifactPath(module, "jvm", "pom");
   const aar = artifactPath(module, "android", "aar");
+  const androidSources = artifactPath(module, "android", "jar", "sources");
   const moduleFile = artifactPath(module, "jvm", "module");
   check(`${module}: jvm jar`, existsSync(jar), jar);
   check(`${module}: jvm pom`, existsSync(pom), pom);
   check(`${module}: gradle module metadata`, existsSync(moduleFile), moduleFile);
   check(`${module}: android aar`, existsSync(aar), aar);
-  check(`${module}: sources jar`, existsSync(sources), sources);
+  check(`${module}: jvm sources jar`, existsSync(sources), sources);
+  check(`${module}: android sources jar`, existsSync(androidSources), androidSources);
 
   if (existsSync(jar)) {
     const entries = unzipList(jar).filter((entry) => entry.endsWith(".class"));
     check(`${module}: jar has classes`, entries.length > 0, `${entries.length} classes`);
-    if (entries.length > 0) {
-      const bytes = unzipBytes(jar, entries[0]);
+    const sample = entries.length > 400 ? entries.filter((_, index) => index % 7 === 0) : entries;
+    const violations = [];
+    for (const entry of sample) {
+      const bytes = unzipBytes(jar, entry);
       const major = bytes ? (bytes[6] << 8) | bytes[7] : -1;
-      check(
-        `${module}: class major version ${expectedClassMajor} (Java 17)`,
-        major === expectedClassMajor,
-        `got ${major}`,
-      );
+      if (major !== expectedClassMajor) violations.push(`${entry}=${major}`);
     }
+    check(
+      `${module}: all sampled classes major ${expectedClassMajor} (Java 17)`,
+      violations.length === 0,
+      violations.length === 0 ? `${sample.length} classes` : violations.slice(0, 5).join(", "),
+    );
   }
 
   if (existsSync(pom)) {

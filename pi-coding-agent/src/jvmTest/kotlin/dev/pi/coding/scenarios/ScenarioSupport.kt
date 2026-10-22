@@ -53,10 +53,12 @@ internal object ScenarioSupport {
         contextWindow: Long = 128_000,
         maxTokens: Long = 16_384,
         tokenSize: FauxTokenSize = FauxTokenSize(1, 1),
+        tokensPerSecond: Double? = null,
     ): FauxProviderHandle = fauxProvider(
         FauxProviderOptions(
             provider = provider,
             tokenSize = tokenSize,
+            tokensPerSecond = tokensPerSecond,
             models = listOf(
                 FauxModelDefinition(id = "faux-1", contextWindow = contextWindow, maxTokens = maxTokens),
             ),

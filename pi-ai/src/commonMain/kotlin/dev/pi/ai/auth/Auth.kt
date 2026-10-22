@@ -26,6 +26,7 @@ data class ResolvedAuth(
     val apiKey: String?,
     val headers: Map<String, String> = emptyMap(),
     val source: String,
+    val env: Map<String, String> = emptyMap(),
 )
 
 interface AuthResolver {
