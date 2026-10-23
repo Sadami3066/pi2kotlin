@@ -187,6 +187,7 @@ suspend fun createAgentSession(options: AgentSessionOptions): AgentSession {
             steeringMode = parseQueueMode(settings.getSteeringMode()),
             followUpMode = parseQueueMode(settings.getFollowUpMode()),
             maxRetryDelayMs = providerRetry.maxRetryDelayMs,
+            sessionId = sessionManager.sessionId,
         ),
     )
 

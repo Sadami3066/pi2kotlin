@@ -31,6 +31,20 @@ class Provider(
     val modelTransform: ((AnyModel, Map<String, String>?) -> AnyModel)? = null,
 )
 
+private const val OPENCODE_SESSION_HEADER = "x-opencode-session"
+
+private fun applyOpenCodeSessionHeader(model: Model, options: StreamOptions): StreamOptions {
+    val sessionId = options.sessionId ?: return options
+    val isOpenCode = model.provider == "opencode" || model.provider == "opencode-go" ||
+        model.baseUrl.contains("opencode.ai")
+    if (!isOpenCode) return options
+    if (options.headers?.keys?.any { it.equals(OPENCODE_SESSION_HEADER, ignoreCase = true) } == true) return options
+    val headers = LinkedHashMap<String, String?>()
+    options.headers?.forEach { (name, value) -> headers[name] = value }
+    headers[OPENCODE_SESSION_HEADER] = sessionId
+    return options.copy(headers = headers)
+}
+
 class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()) {
     fun setProvider(provider: Provider) {
         providers[provider.id] = provider
@@ -84,7 +98,11 @@ class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()
         val dispatchModel = transformModel(provider, model, applied.env) as? Model ?: model
         val api = createApiProvider(provider, dispatchModel)
         signal?.throwIfAborted()
-        return api.stream(dispatchModel, transcript, applied.copy(signal = signal ?: applied.signal))
+        return api.stream(
+            dispatchModel,
+            transcript,
+            applyOpenCodeSessionHeader(dispatchModel, applied).copy(signal = signal ?: applied.signal),
+        )
     }
 
     suspend fun complete(
@@ -112,7 +130,9 @@ class Models(private val providers: MutableMap<String, Provider> = linkedMapOf()
         return api.streamSimple(
             dispatchModel,
             transcript,
-            (options ?: SimpleStreamOptions()).copy(stream = applied.copy(signal = signal ?: applied.signal)),
+            (options ?: SimpleStreamOptions()).copy(
+                stream = applyOpenCodeSessionHeader(dispatchModel, applied).copy(signal = signal ?: applied.signal),
+            ),
         )
     }
 
