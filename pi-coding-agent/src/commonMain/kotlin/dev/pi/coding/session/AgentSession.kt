@@ -434,6 +434,43 @@ class AgentSession internal constructor(
         agent.abort()
     }
 
+    fun canRetryLastAssistant(): Boolean {
+        if (closed) return false
+        val assistant = agent.state.messages.lastOrNull()?.asAssistantMessage() ?: return false
+        return assistant.stopReason == StopReason.Error || assistant.stopReason == StopReason.Aborted
+    }
+
+    suspend fun retryLastAssistant(): Boolean {
+        check(!closed) { "Session is disposed" }
+        if (activeOperation != null) abort()
+        waitForIdle()
+        return runOperation(emitSettled = true) { signal ->
+            if (!omitFailedTurns()) return@runOperation false
+            signal.throwIfAborted()
+            val last = agent.state.messages.lastOrNull() ?: return@runOperation false
+            if (last.asLlmMessage() is SystemMessage) return@runOperation false
+            agent.continueRun()
+            runRetryLoop(signal)
+            true
+        }
+    }
+
+    private suspend fun omitFailedTurns(): Boolean {
+        val messages = agent.state.messages
+        var removed = false
+        while (messages.isNotEmpty()) {
+            val last = messages.last()
+            val assistant = last.asAssistantMessage() ?: break
+            if (assistant.stopReason != StopReason.Error && assistant.stopReason != StopReason.Aborted) break
+            messages.removeAt(messages.size - 1)
+            val entryId = entryIdsByMessage.remove(last)
+            if (entryId != null) sessionManager.appendContextEdit(entryId, null)
+            removed = true
+        }
+        return removed
+    }
+
+
     suspend fun waitForIdle() {
         activeOperation?.await()
         agent.waitForIdle()

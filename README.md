@@ -6,7 +6,7 @@ A Kotlin Multiplatform SDK for building AI agent apps on **Android and the JVM**
 
 [中文文档](README.zh-CN.md)
 
-Status: **0.1.1 alpha**. The library builds, ships Android AARs and JVM JARs, and is covered by 1,000+ JVM tests plus Android host tests. API shape may still change before 1.0.
+Status: **0.1.3 alpha**. The library builds, ships Android AARs and JVM JARs, and is covered by 1,000+ JVM tests plus Android host tests. API shape may still change before 1.0.
 
 ## Modules
 
@@ -28,7 +28,7 @@ Dependency direction: `pi-coding-agent` → `pi-agent` → `pi-ai`.
 
 Artifacts are not on Maven Central yet. Two options:
 
-**Prebuilt artifacts**: download `pi2kotlin-0.1.1-m2.zip` from [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases), unzip it, and point the dependency repository at the unzipped directory:
+**Prebuilt artifacts**: download `pi2kotlin-0.1.3-m2.zip` from [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases), unzip it, and point the dependency repository at the unzipped directory:
 
 ```kotlin
 repositories {
@@ -47,10 +47,10 @@ Then depend on the variant you need:
 
 ```kotlin
 // JVM
-implementation("dev.pi:pi-coding-agent:0.1.1")
+implementation("dev.pi:pi-coding-agent:0.1.3")
 
 // Android
-implementation("dev.pi:pi-coding-agent-android:0.1.1")
+implementation("dev.pi:pi-coding-agent-android:0.1.3")
 ```
 
 Android apps also need `android.useAndroidX=true`.
@@ -133,8 +133,8 @@ The Android demo lives in `examples/android-demo` (standalone Gradle build) and 
 ./gradlew build                           # compile all targets and run all tests
 ./gradlew :pi-ai:jvmTest                  # fast JVM-only tests
 ./gradlew publishToMavenLocal             # publish dev.pi:* artifacts locally
-node scripts/verify-release.mjs 0.1.1     # verify published artifacts (Java 17 bytecode, AARs, POMs)
-./scripts/release-local.sh 0.1.1          # clean build + tests + local publish + demos + checksums
+node scripts/verify-release.mjs 0.1.3     # verify published artifacts (Java 17 bytecode, AARs, POMs)
+./scripts/release-local.sh 0.1.3          # clean build + tests + local publish + demos + checksums
 ```
 
 On low-memory machines use `./scripts/gw.sh <tasks>` instead of `./gradlew` to serialize Gradle runs.

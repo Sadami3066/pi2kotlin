@@ -4,7 +4,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const version = process.argv[2] ?? "0.1.1";
+const version = process.argv[2] ?? "0.1.3";
 const m2 = join(homedir(), ".m2", "repository", "dev", "pi");
 const modules = ["pi-ai", "pi-agent", "pi-coding-agent"];
 const expectedClassMajor = 61;
