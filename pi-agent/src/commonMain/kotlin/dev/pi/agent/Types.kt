@@ -250,7 +250,7 @@ typealias GetApiKey = suspend (provider: String) -> String?
 
 class AgentContext(
     messages: List<AgentMessage> = emptyList(),
-    val tools: List<AgentTool>? = null,
+    var tools: List<AgentTool>? = null,
 ) {
     val messages: MutableList<AgentMessage> = messages.toMutableList()
 }
@@ -328,6 +328,7 @@ class AgentOptions(
     val maxRetryDelayMs: Long? = null,
     val toolExecution: ToolExecutionMode? = null,
     val identity: ClientIdentity? = null,
+    val getActiveTools: (suspend () -> List<AgentTool>)? = null,
 )
 
 class AgentLoopConfig(
@@ -344,6 +345,7 @@ class AgentLoopConfig(
     val toolExecution: ToolExecutionMode = ToolExecutionMode.Parallel,
     override val beforeToolCall: BeforeToolCall? = null,
     override val afterToolCall: AfterToolCall? = null,
+    val getActiveTools: (suspend () -> List<AgentTool>)? = null,
 ) : ToolCallHooks {
     val reasoning: ThinkingLevel
         get() = streamOptions.reasoning?.toThinkingLevel() ?: ThinkingLevel.Off
@@ -362,6 +364,7 @@ class AgentLoopConfig(
         toolExecution = toolExecution,
         beforeToolCall = beforeToolCall,
         afterToolCall = afterToolCall,
+        getActiveTools = getActiveTools,
     )
 }
 

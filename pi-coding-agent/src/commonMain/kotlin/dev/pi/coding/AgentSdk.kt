@@ -32,6 +32,15 @@ import dev.pi.coding.prompt.SystemPromptSections
 import dev.pi.coding.prompt.buildSystemPrompt
 import dev.pi.coding.session.AgentSession
 import dev.pi.coding.session.CodingHooks
+import dev.pi.coding.mcp.DefaultMcpTransportFactory
+import dev.pi.coding.mcp.McpConfigLoadResult
+import dev.pi.coding.mcp.McpConfigLoader
+import dev.pi.coding.mcp.McpManager
+import dev.pi.coding.mcp.McpManagerCallbacks
+import dev.pi.coding.mcp.McpOptions
+import dev.pi.coding.mcp.McpToolSearch
+import dev.pi.coding.session.CustomEntry
+import dev.pi.coding.session.SessionEvent
 import dev.pi.coding.session.SessionManager
 import dev.pi.coding.settings.SettingsManager
 import dev.pi.coding.settings.TrustManager
@@ -44,6 +53,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import dev.pi.ai.RunSignal
 import okio.FileSystem
 import okio.Path
@@ -64,6 +81,7 @@ data class AgentSessionOptions(
     val env: Map<String, String> = emptyMap(),
     val extraSystemPromptSections: Map<String, String> = emptyMap(),
     val projectTrusted: Boolean? = null,
+    val mcp: dev.pi.coding.mcp.McpOptions = dev.pi.coding.mcp.McpOptions(),
 )
 
 suspend fun createAgentSession(options: AgentSessionOptions): AgentSession {
@@ -206,6 +224,9 @@ suspend fun createAgentSession(options: AgentSessionOptions): AgentSession {
         scope = scope,
     )
     session.start()
+    if (options.mcp.enabled) {
+        attachMcp(options, paths, settings, scope, session, options.mcp)
+    }
     options.hooks.onSessionStart?.invoke(session)
     return session
 }
@@ -248,6 +269,88 @@ private fun replaySystemSections(messages: List<dev.pi.agent.AgentMessage>): Map
 private fun parseQueueMode(value: String): QueueMode = when (value.lowercase()) {
     "all" -> QueueMode.All
     else -> QueueMode.OneAtATime
+}
+
+private const val MCP_LOADED_TOOLS_ENTRY = "mcp_loaded_tools"
+private val MCP_RESOURCE_TOOL_NAMES = setOf("list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource")
+
+private suspend fun attachMcp(
+    options: AgentSessionOptions,
+    paths: AgentPaths,
+    settings: SettingsManager,
+    scope: CoroutineScope,
+    session: AgentSession,
+    mcpOptions: McpOptions,
+) {
+    val loaded = if (mcpOptions.loadConfig) {
+        McpConfigLoader(paths, options.fs, settings).load(options.env)
+    } else {
+        McpConfigLoadResult(emptyList(), emptyList())
+    }
+    val merged = LinkedHashMap<String, dev.pi.mcp.config.McpServerConfig>()
+    for ((name, config) in loaded.servers) merged[name] = config
+    merged.putAll(mcpOptions.servers)
+    for (error in loaded.errors) session.emitSessionEvent(SessionEvent.SessionError(error))
+    val callbacks = McpManagerCallbacks(
+        toolsAdded = { _, tools -> session.addTools(tools) },
+        toolsRemoved = { _, names -> session.removeTools(names) },
+        statusChanged = { status -> session.emitSessionEvent(SessionEvent.McpServerStatusChanged(status.name, status)) },
+        log = { server, level, message -> session.emitSessionEvent(SessionEvent.McpLog(server, level, message)) },
+        resourceToolsChanged = { tools ->
+            session.removeTools(MCP_RESOURCE_TOOL_NAMES)
+            if (tools.isNotEmpty()) session.addTools(tools)
+        },
+        existingToolNames = { session.toolNames() },
+    )
+    val manager = McpManager(
+        options = mcpOptions,
+        factory = mcpOptions.transportFactory ?: DefaultMcpTransportFactory(options.transport, options.env),
+        scope = scope,
+        initialServers = merged,
+        callbacks = callbacks,
+        oauthHttp = options.transport,
+        oauthTokenStore = dev.pi.mcp.oauth.FileMcpTokenStore(
+            dev.pi.mcp.oauth.defaultMcpAuthFile(paths.agentDir),
+            options.fs,
+        ),
+    )
+    session.attachMcpManager(manager)
+    manager.start()
+    if (mcpOptions.autoEnableToolSearch && manager.hasDeferredTools()) {
+        val search = McpToolSearch(
+            catalog = { manager.deferredCatalog() },
+            onLoaded = { names -> onMcpToolsLoaded(session, manager, names) },
+        )
+        session.addTools(listOf(search.toCodingTool()))
+    }
+    restoreLoadedMcpTools(session, manager)
+}
+
+private suspend fun onMcpToolsLoaded(session: AgentSession, manager: McpManager, names: List<String>) {
+    val tools = manager.loadDeferredTools(names)
+    if (tools.isEmpty()) return
+    session.addTools(tools)
+    val payload = buildJsonObject {
+        put(
+            "loaded",
+            JsonArray(names.map { JsonPrimitive(it) }),
+        )
+    }
+    session.sessionManager.appendCustomEntry(MCP_LOADED_TOOLS_ENTRY, payload)
+}
+
+private suspend fun restoreLoadedMcpTools(session: AgentSession, manager: McpManager) {
+    val entry = session.sessionManager.getEntries()
+        .filterIsInstance<CustomEntry>()
+        .lastOrNull { it.customType == MCP_LOADED_TOOLS_ENTRY }
+        ?: return
+    val data = entry.data as? JsonObject ?: return
+    val names = (data["loaded"] as? JsonArray)
+        ?.mapNotNull { element -> runCatching { element.jsonPrimitive.content }.getOrNull() }
+        .orEmpty()
+    if (names.isEmpty()) return
+    val tools = manager.loadDeferredTools(names)
+    if (tools.isNotEmpty()) session.addTools(tools)
 }
 
 class AgentSessionRuntime private constructor(

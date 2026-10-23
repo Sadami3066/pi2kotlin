@@ -111,6 +111,7 @@ suspend fun runAgentLoop(
     signal: RunSignal? = null,
     streamFn: StreamFn? = null,
 ): List<AgentMessage> {
+    refreshActiveTools(context, config)
     val initialMessages = declareToolChanges(context, prompts)
     val newMessages = initialMessages.toMutableList()
     val currentContext = AgentContext(context.messages + initialMessages, context.tools)
@@ -185,6 +186,7 @@ private suspend fun runLoop(
                 emit(AgentEvent.TurnStart)
             }
 
+            refreshActiveTools(currentContext, config)
             for (message in declareToolChanges(currentContext, preparedMessages + pendingMessages)) {
                 emit(AgentEvent.MessageStart(message))
                 emit(AgentEvent.MessageEnd(message))
@@ -282,6 +284,18 @@ private fun resolveReasoning(
     update == null -> current
     update == ThinkingLevel.Off -> null
     else -> update.toPiThinkingLevel()
+}
+
+private suspend fun refreshActiveTools(context: AgentContext, config: AgentLoopConfig) {
+    val getActiveTools = config.getActiveTools ?: return
+    val activeTools = getActiveTools()
+    val currentTools = context.tools
+    if (currentTools != null && currentTools.size == activeTools.size &&
+        currentTools.indices.all { currentTools[it] === activeTools[it] }
+    ) {
+        return
+    }
+    context.tools = activeTools
 }
 
 private fun declareToolChanges(context: AgentContext, pendingMessages: List<AgentMessage>): List<AgentMessage> {

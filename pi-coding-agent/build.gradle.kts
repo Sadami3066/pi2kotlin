@@ -27,6 +27,7 @@ kotlin {
 
         commonMain.dependencies {
             api(project(":pi-agent"))
+            api(project(":pi-mcp"))
             api(libs.okio)
         }
 

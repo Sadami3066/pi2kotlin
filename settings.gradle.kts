@@ -1,7 +1,7 @@
 rootProject.name = "pi2kotlin"
 
-include("pi-ai", "pi-agent", "pi-coding-agent")
-include("examples:jvm-demo")
+include("pi-ai", "pi-agent", "pi-coding-agent", "pi-mcp")
+include("examples:jvm-demo", "examples:mcp-demo")
 
 pluginManagement {
     repositories {

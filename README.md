@@ -6,7 +6,7 @@ A Kotlin Multiplatform SDK for building AI agent apps on **Android and the JVM**
 
 [中文文档](README.zh-CN.md)
 
-Status: **0.1.3 alpha**. The library builds, ships Android AARs and JVM JARs, and is covered by 1,000+ JVM tests plus Android host tests. API shape may still change before 1.0.
+Status: **0.2.0 alpha**. The library builds, ships Android AARs and JVM JARs, and is covered by 1,000+ JVM tests plus Android host tests. API shape may still change before 1.0.
 
 ## Modules
 
@@ -14,9 +14,10 @@ Status: **0.1.3 alpha**. The library builds, ships Android AARs and JVM JARs, an
 |---|---|---|
 | `pi-ai` | `packages/ai` | Unified LLM API: 10 chat APIs, image generation and classifier APIs, 42 built-in providers, model catalog, auth (API key + 9 OAuth flows), streaming events, retries, usage/cost |
 | `pi-agent` | `packages/agent` | Agent runtime: event lifecycle, tool execution (serial and parallel), hooks, steering/follow-up queues, proxy transport |
+| `pi-mcp` | `packages/mcp` (subset) | MCP client: Streamable HTTP + stdio (JVM), tools/resources/prompts, OAuth 2.1, deferred tools via `tool_search` |
 | `pi-coding-agent` | `packages/coding-agent` (core/SDK layer) | Sessions (pi-compatible JSONL), settings, model resolution, built-in tools, system prompt and resources, compaction, and the `AgentSession` / `createAgentSession` facade |
 
-Dependency direction: `pi-coding-agent` → `pi-agent` → `pi-ai`.
+Dependency direction: `pi-coding-agent` → `pi-agent` → `pi-ai`, and `pi-coding-agent` → `pi-mcp` → `pi-ai`.
 
 ## Requirements
 
@@ -28,7 +29,7 @@ Dependency direction: `pi-coding-agent` → `pi-agent` → `pi-ai`.
 
 Artifacts are not on Maven Central yet. Two options:
 
-**Prebuilt artifacts**: download `pi2kotlin-0.1.3-m2.zip` from [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases), unzip it, and point the dependency repository at the unzipped directory:
+**Prebuilt artifacts**: download `pi2kotlin-0.2.0-m2.zip` from [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases), unzip it, and point the dependency repository at the unzipped directory:
 
 ```kotlin
 repositories {
@@ -47,10 +48,10 @@ Then depend on the variant you need:
 
 ```kotlin
 // JVM
-implementation("dev.pi:pi-coding-agent:0.1.3")
+implementation("dev.pi:pi-coding-agent:0.2.0")
 
 // Android
-implementation("dev.pi:pi-coding-agent-android:0.1.3")
+implementation("dev.pi:pi-coding-agent-android:0.2.0")
 ```
 
 Android apps also need `android.useAndroidX=true`.
@@ -114,6 +115,30 @@ Built-in tools: `read`, `write`, `edit`, `ls`, `grep`, `find`, `bash`.
 - `grep` / `find` are pure Kotlin and honor `.gitignore` / `.ignore` / `.fdignore`.
 - Custom tools implement `CodingTool` and are passed through `AgentSessionOptions.tools`.
 
+## MCP
+
+The SDK embeds an MCP client (Streamable HTTP; stdio on JVM) and reads `mcp.json` from `<agentDir>/mcp.json` and the trusted project's `.pi/mcp.json` — the same `mcpServers` shape as other MCP clients.
+
+```kotlin
+val session = createAgentSession(
+    options.copy(
+        mcp = McpOptions(
+            servers = mapOf(
+                "docs" to McpServerConfig.Http(url = "https://mcp.example.com/mcp"),
+                "filesystem" to McpServerConfig.Stdio(command = "npx", args = listOf("-y", "@modelcontextprotocol/server-filesystem", ".")),
+            ),
+        ),
+    ),
+)
+```
+
+- Tools are namespaced `mcp__<server>__<tool>`; `direct` tools are declared immediately, `deferred` tools (the default) are loaded with `tool_search` and available from the next model call.
+- Resources (`list_mcp_resources`, `read_mcp_resource`) and MCP prompts (`session.promptMcp(...)` or `/mcp__server__prompt`) are supported.
+- OAuth 2.1 (discovery, DCR, PKCE, refresh, scope step-up) with tokens in `<agentDir>/mcp-auth.json`; Android hosts provide the browser interaction.
+- Runtime API: `session.mcp.servers`, `reconnect`, `reload`, `addServer`, `removeServer`, `setEnabled`, `healthCheck`, `signIn`.
+
+Full guide: [docs/MCP.md](docs/MCP.md).
+
 ## Hooks
 
 `CodingHooks` supports input interception (`onInput`), prompt transformation, extra system prompt sections, and session start/shutdown callbacks.
@@ -122,6 +147,7 @@ Built-in tools: `read`, `write`, `edit`, `ls`, `grep`, `find`, `bash`.
 
 ```bash
 ./gradlew :examples:jvm-demo:run          # offline end-to-end demo using the faux provider
+./gradlew :examples:mcp-demo:run          # offline MCP demo (mock HTTP server, deferred tools, tool_search)
 ./scripts/build-android-demo.sh           # publish to ~/.m2 and build the demo APK
 ```
 
@@ -133,8 +159,8 @@ The Android demo lives in `examples/android-demo` (standalone Gradle build) and 
 ./gradlew build                           # compile all targets and run all tests
 ./gradlew :pi-ai:jvmTest                  # fast JVM-only tests
 ./gradlew publishToMavenLocal             # publish dev.pi:* artifacts locally
-node scripts/verify-release.mjs 0.1.3     # verify published artifacts (Java 17 bytecode, AARs, POMs)
-./scripts/release-local.sh 0.1.3          # clean build + tests + local publish + demos + checksums
+node scripts/verify-release.mjs 0.2.0     # verify published artifacts (Java 17 bytecode, AARs, POMs)
+./scripts/release-local.sh 0.2.0          # clean build + tests + local publish + demos + checksums
 ```
 
 On low-memory machines use `./scripts/gw.sh <tasks>` instead of `./gradlew` to serialize Gradle runs.
@@ -143,12 +169,14 @@ On low-memory machines use `./scripts/gw.sh <tasks>` instead of `./gradlew` to s
 
 - No CLI or terminal UI: the SDK exposes events and `AgentSession` for the host app to render.
 - No TypeScript extension compatibility; use Kotlin tools and hooks instead.
+- MCP codemode scripts are not supported (`codemode` exposure maps to deferred + `tool_search`); sampling/elicitation/roots, resource subscriptions and CIMD are not implemented; legacy HTTP+SSE transport is rejected.
 - OpenAI Codex transport is SSE only (WebSocket/zstd not implemented).
 - Amazon Bedrock credentials come from environment variables or a bearer token (no profile/IMDS/STS chain).
 - Radius dynamic model catalog is stubbed; only the static gateway URL is supported.
 - Images are passed through without resizing or format conversion.
 - JSON Schema validation covers common constraint keywords plus local `$ref`/`$defs`; `format` supports a subset.
-- Not implemented: MCP client, codemode sandbox, virtual models, deferred responses, telemetry.
+- Not implemented: codemode sandbox, virtual models, deferred responses, telemetry.
+- Android supports HTTP MCP servers only (no stdio subprocesses).
 
 ## License
 

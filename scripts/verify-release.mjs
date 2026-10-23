@@ -4,9 +4,9 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-const version = process.argv[2] ?? "0.1.3";
+const version = process.argv[2] ?? "0.2.0";
 const m2 = join(homedir(), ".m2", "repository", "dev", "pi");
-const modules = ["pi-ai", "pi-agent", "pi-coding-agent"];
+const modules = ["pi-ai", "pi-agent", "pi-mcp", "pi-coding-agent"];
 const expectedClassMajor = 61;
 
 let failures = 0;
@@ -67,8 +67,15 @@ for (const module of modules) {
   if (existsSync(pom)) {
     const text = readFileSync(pom, "utf8");
     check(`${module}: pom version`, text.includes(`<version>${version}</version>`), "");
-    if (module !== "pi-ai") {
-      const dependencyModule = module === "pi-agent" ? "pi-ai-jvm" : "pi-agent-jvm";
+    const expectedDependencies =
+      module === "pi-agent"
+        ? ["pi-ai-jvm"]
+        : module === "pi-mcp"
+          ? ["pi-ai-jvm"]
+          : module === "pi-coding-agent"
+            ? ["pi-agent-jvm", "pi-mcp-jvm"]
+            : [];
+    for (const dependencyModule of expectedDependencies) {
       check(`${module}: pom depends on ${dependencyModule}`, text.includes(dependencyModule), "");
     }
   }

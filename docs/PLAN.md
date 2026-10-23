@@ -156,3 +156,17 @@ AgentMessage/AgentEvent、双层 agent loop、并行/串行工具执行、hooks�
 | P2 | 中止重试后 retryAttempt 泄漏到下一轮 | `runOperation` 进入与退出都重置 retryAttempt | 第一轮重试等待中 abort，第二轮仍能重试一次并成功 |
 | — | grep >16MiB 静默跳过、整文件读取 | 改为流式逐行读取 + 上下文环形缓冲；跳过计数，无匹配时明确提示 skipped；重叠 context 合并 | 大文件跳过提示/有匹配不影响用例；跨行重叠合并用例 |
 | — | `verify-release.mjs` sources 路径错误、只检查第一个 class | sources jar 路径修正并新增 android sources 检查；抽样/全量检查 class major | 0.1.1 发布校验 35/35 PASS |
+
+## MCP 0.2.0（已实施）
+
+| 能力 | 实现 |
+|---|---|
+| `pi-mcp` 模块 | JSON-RPC 2.0 codec、McpClient（initialize/分页 tools/resources/prompts/call/ping/通知/取消/超时）、SSE 解析、Streamable HTTP（session id、协议版本、GET 通知流、Last-Event-ID 重连、DELETE）、JVM stdio（进程清理）、OAuth 2.1（发现/DCR/PKCE/refresh/step-up/token 持久化/loopback） |
+| 配置 | `<agentDir>/mcp.json` + 受信任项目 `.pi/mcp.json`；`mcpServers` 兼容 pi；stdio/http、exposure/toolExposure、timeout、oauth；`${ENV}` 插值；`!cmd` 拒绝；项目仅覆盖 enabled/exposure/toolExposure |
+| 工具 | `mcp__<server>__<tool>` 命名与冲突 hash；direct/deferred/codemode(→deferred)/hidden；`tool_search`（BM25 + 中文 2-gram，结果写入 `mcp_loaded_tools` 并在同一 run 的下一轮生效）；结果 text/image/audio/resource 映射、20KB 截断、structuredContent、progress→onUpdate、isError |
+| 资源 | 三个资源工具（单/多 server 聚合），二进制落盘 |
+| prompts | `listPrompts`/`promptMcp`/`/mcp__server__prompt` |
+| 运行时 | `session.mcp`：servers 状态、add/remove/reconnect/reload/setEnabled/healthCheck/tools/prompts/readResource/signIn；SessionEvent 增加 MCP 状态/工具/日志/登录事件 |
+| pi-agent | `AgentOptions/AgentLoopConfig.getActiveTools`，每轮刷新工具并写 toolsAdded/Removed 补丁，支持 run 中 deferred 工具加载 |
+| 测试 | pi-mcp 141（协议/HTTP/stdio/OAuth）；coding 新增 adapter/resources/tool_search/prompts/manager/端到端场景；Android host 编译 + 纯协议测试 |
+| 示例/文档 | `examples/mcp-demo`（本地 mock MCP server + deferred + tool_search）、`docs/MCP.md`、README 中英文 |

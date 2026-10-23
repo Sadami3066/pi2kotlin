@@ -91,6 +91,14 @@ sealed interface SessionEvent {
     data class InputHandled(val text: String) : SessionEvent
 
     data class CustomMessageAppended(val customType: String, val entryId: String) : SessionEvent
+
+    data class McpServerStatusChanged(val name: String, val status: dev.pi.coding.mcp.McpServerStatus) : SessionEvent
+
+    data class McpToolsChanged(val server: String, val added: List<String>, val removed: List<String>) : SessionEvent
+
+    data class McpLog(val server: String, val level: String, val message: String) : SessionEvent
+
+    data class McpSignInRequired(val server: String, val authorizationUrl: String) : SessionEvent
 }
 
 data class InputRequest(val text: String, val images: List<ImageContent>? = null)
@@ -136,6 +144,11 @@ class AgentSession internal constructor(
     private var operationSignal: RunSignal? = null
     private var activeOperation: CompletableDeferred<Unit>? = null
     private var operationJob: Job? = null
+    internal var mcpStatusProvider: (() -> List<dev.pi.coding.mcp.McpServerStatus>)? = null
+    private var mcpManager: dev.pi.coding.mcp.McpManager? = null
+
+    val mcp: dev.pi.coding.mcp.McpManager
+        get() = mcpManager ?: throw IllegalStateException("MCP is not enabled for this session")
 
     val events: SharedFlow<SessionEvent> = sessionEvents.asSharedFlow()
 
@@ -153,7 +166,39 @@ class AgentSession internal constructor(
 
     val isBusy: Boolean get() = activeOperation != null || agent.state.isStreaming
 
-    val activeToolNames: List<String> get() = toolSet.map { it.name }
+    private val mutableTools: MutableList<CodingTool> = toolSet.toMutableList()
+
+    val activeToolNames: List<String> get() = mutableTools.map { it.name }
+
+    internal fun addTools(tools: List<CodingTool>) {
+        for (tool in tools) {
+            if (mutableTools.none { it.name == tool.name }) mutableTools.add(tool)
+        }
+        agent.state.tools = agentTools().toMutableList()
+    }
+
+    internal fun removeTools(names: Set<String>) {
+        if (names.isEmpty()) return
+        mutableTools.removeAll { it.name in names }
+        agent.state.tools = agentTools().toMutableList()
+    }
+
+    internal fun toolNames(): Set<String> = mutableTools.mapTo(mutableSetOf()) { it.name }
+
+    internal fun attachMcpManager(manager: dev.pi.coding.mcp.McpManager) {
+        mcpManager = manager
+        mcpStatusProvider = { manager.servers }
+    }
+
+    internal suspend fun emitSessionEvent(event: SessionEvent) {
+        sessionEvents.emit(event)
+    }
+
+    suspend fun promptMcp(server: String, name: String, args: Map<String, String> = emptyMap()) {
+        val expanded = mcp.expandPrompt(server, name, args)
+            ?: throw IllegalArgumentException("Unknown MCP prompt $server/$name")
+        prompt(expanded)
+    }
 
     val systemPrompt: String get() = agent.state.systemPrompt
 
@@ -309,7 +354,8 @@ class AgentSession internal constructor(
     }
 
     private suspend fun runPrompt(text: String, images: List<ImageContent>?, signal: RunSignal) {
-        val input = runInputHooks(text, images, signal)
+        val mcpExpanded = mcpManager?.expandPromptCommand(text) ?: text
+        val input = runInputHooks(mcpExpanded, images, signal)
         val expanded = expandPromptTemplate(input.text, promptTemplates)
         val transformed = hooks.transformPrompt?.invoke(expanded) ?: expanded
         syncSystemPromptIfNeeded()
@@ -516,6 +562,9 @@ class AgentSession internal constructor(
         hooks.onSessionShutdown?.invoke(this)
         internalUnsubscribe?.invoke()
         internalUnsubscribe = null
+        runCatching { mcpManager?.close() }
+        mcpManager = null
+        mcpStatusProvider = null
         sessionManager.close()
         scope.cancel()
     }
@@ -559,8 +608,8 @@ class AgentSession internal constructor(
         val base = buildSystemPrompt(
             SystemPromptInput(
                 preamble = resources.systemPromptOverride,
-                toolSnippets = toolSet.mapNotNull { tool -> tool.promptSnippet?.let { "${tool.name}: $it" } },
-                toolGuidelines = toolSet.flatMap { it.promptGuidelines.orEmpty() },
+                toolSnippets = mutableTools.mapNotNull { tool -> tool.promptSnippet?.let { "${tool.name}: $it" } },
+                toolGuidelines = mutableTools.flatMap { it.promptGuidelines.orEmpty() },
                 docsPaths = emptyList(),
                 addendum = resources.appendSystemPrompt,
                 projectInstructions = resources.contextFiles,
@@ -569,11 +618,12 @@ class AgentSession internal constructor(
             ),
         )
         val hookExtras = hooks.extraSystemPromptSections?.invoke().orEmpty()
-        val extras = staticSystemPromptSections + hookExtras
+        val mcpSection = mcpStatusProvider?.invoke()?.let { dev.pi.coding.mcp.buildMcpServersSection(it) }
+        val extras = staticSystemPromptSections + hookExtras + (mcpSection?.let { mapOf("mcp_servers" to it) } ?: emptyMap())
         return if (extras.isEmpty()) base else SystemPromptSections(base.sections + extras)
     }
 
-    internal fun agentTools(): List<AgentTool> = toolSet.map { it.asAgentTool() }
+    internal fun agentTools(): List<AgentTool> = mutableTools.map { it.asAgentTool() }
 
     private fun ThinkingLevel.modelString(): String = when (this) {
         ThinkingLevel.Off -> "off"

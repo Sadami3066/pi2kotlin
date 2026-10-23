@@ -84,6 +84,9 @@ class Agent(options: AgentOptions = AgentOptions()) {
 
     var identity: ClientIdentity? = options.identity
 
+    var getActiveTools: (suspend () -> List<AgentTool>)? =
+        options.getActiveTools ?: { stateValue.tools.toList() }
+
     val state: AgentState get() = stateValue
 
     var steeringMode: QueueMode
@@ -287,6 +290,7 @@ class Agent(options: AgentOptions = AgentOptions()) {
             toolExecution = toolExecution,
             beforeToolCall = beforeToolCall,
             afterToolCall = afterToolCall,
+            getActiveTools = getActiveTools,
         )
     }
 

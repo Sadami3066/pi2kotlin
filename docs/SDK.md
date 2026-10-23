@@ -6,11 +6,11 @@
 
 ```kotlin
 dependencies {
-    implementation("dev.pi:pi-coding-agent:0.1.3")
+    implementation("dev.pi:pi-coding-agent:0.2.0")
 }
 ```
 
-Android 使用 `dev.pi:pi-coding-agent-android:0.1.3`。产物暂未发布到 Maven Central，先执行 `./gradlew publishToMavenLocal`。
+Android 使用 `dev.pi:pi-coding-agent-android:0.2.0`。产物暂未发布到 Maven Central，先执行 `./gradlew publishToMavenLocal`。
 
 模块：`pi-ai`（LLM 统一层）→ `pi-agent`（agent 循环）→ `pi-coding-agent`（会话/工具/提示词/SDK 门面）。targets：Android（minSdk 26）+ JVM（Java 17 字节码）。
 
@@ -128,6 +128,10 @@ CodingHooks(
 - 文件：okio `FileSystem`，可注入（默认 `FileSystem.SYSTEM`）。
 - 命令执行：实现 `ShellExecutor` 并传给 `AgentSessionOptions.shellExecutor`。
 - 凭据：实现自己的 `CredentialStore` 或使用默认文件实现。
+
+## MCP
+
+见 [MCP 接入指南](MCP.md)。
 
 ## 限制
 

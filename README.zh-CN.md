@@ -6,7 +6,7 @@
 
 [English](README.md)
 
-状态：**0.1.3 alpha**。可编译、可发布 Android AAR 与 JVM JAR；JVM 测试 1,000+、Android host 测试数百；1.0 前 API 仍可能调整。
+状态：**0.2.0 alpha**。可编译、可发布 Android AAR 与 JVM JAR；JVM 测试 1,000+、Android host 测试数百；1.0 前 API 仍可能调整。
 
 ## 模块
 
@@ -14,9 +14,10 @@
 |---|---|---|
 | `pi-ai` | `packages/ai` | 统一 LLM API：10 种 chat API、图片生成/分类器 API、42 个内置 provider、模型目录、认证（API key + 9 个 OAuth 流程）、流式事件、重试、usage/cost |
 | `pi-agent` | `packages/agent` | Agent 运行时：事件生命周期、工具执行（串行/并行）、hooks、steering/follow-up 队列、proxy |
+| `pi-mcp` | `packages/mcp`（子集） | MCP 客户端：Streamable HTTP + stdio（JVM）、工具/资源/提示词、OAuth 2.1、deferred 工具经 `tool_search` 加载 |
 | `pi-coding-agent` | `packages/coding-agent` 的 core/SDK 层 | 会话（pi 兼容 JSONL）、设置、模型解析、内置工具、系统提示词与资源、压缩，以及 `AgentSession` / `createAgentSession` 门面 |
 
-依赖方向：`pi-coding-agent` → `pi-agent` → `pi-ai`。
+依赖方向：`pi-coding-agent` → `pi-agent` → `pi-ai`，以及 `pi-coding-agent` → `pi-mcp` → `pi-ai`。
 
 ## 环境要求
 
@@ -28,7 +29,7 @@
 
 暂未发布到 Maven Central，两种方式：
 
-**直接下载产物**：从 [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases) 下载 `pi2kotlin-0.1.3-m2.zip`，解压后把 repository 指向解压目录：
+**直接下载产物**：从 [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases) 下载 `pi2kotlin-0.2.0-m2.zip`，解压后把 repository 指向解压目录：
 
 ```kotlin
 repositories {
@@ -47,10 +48,10 @@ repositories {
 
 ```kotlin
 // JVM
-implementation("dev.pi:pi-coding-agent:0.1.3")
+implementation("dev.pi:pi-coding-agent:0.2.0")
 
 // Android
-implementation("dev.pi:pi-coding-agent-android:0.1.3")
+implementation("dev.pi:pi-coding-agent-android:0.2.0")
 ```
 
 Android 工程还需要 `android.useAndroidX=true`。
@@ -114,6 +115,30 @@ session.close()
 - `grep` / `find` 为纯 Kotlin 实现，遵守 `.gitignore` / `.ignore` / `.fdignore`
 - 自定义工具实现 `CodingTool`，通过 `AgentSessionOptions.tools` 传入
 
+## MCP
+
+内置 MCP 客户端（Streamable HTTP；JVM 额外支持 stdio），读取 `<agentDir>/mcp.json` 与受信任项目的 `.pi/mcp.json`（与其他 MCP 客户端相同的 `mcpServers` 结构）。
+
+```kotlin
+val session = createAgentSession(
+    options.copy(
+        mcp = McpOptions(
+            servers = mapOf(
+                "docs" to McpServerConfig.Http(url = "https://mcp.example.com/mcp"),
+                "filesystem" to McpServerConfig.Stdio(command = "npx", args = listOf("-y", "@modelcontextprotocol/server-filesystem", ".")),
+            ),
+        ),
+    ),
+)
+```
+
+- 工具名 `mcp__<server>__<tool>`；`direct` 立即声明，`deferred`（默认）通过 `tool_search` 加载并在下一轮可用。
+- 资源三工具（`list_mcp_resources` / `read_mcp_resource` 等）与 MCP prompts（`session.promptMcp(...)` 或 `/mcp__server__prompt`）。
+- OAuth 2.1（发现、DCR、PKCE、刷新、scope step-up），token 存 `<agentDir>/mcp-auth.json`；Android 由宿主提供浏览器回调。
+- 运行时 API：`session.mcp.servers`、`reconnect`、`reload`、`addServer`、`removeServer`、`setEnabled`、`healthCheck`、`signIn`。
+
+完整说明见 [docs/MCP.md](docs/MCP.md)。
+
 ## Hooks
 
 `CodingHooks` 支持输入拦截（`onInput`）、提示词改写、额外系统提示词 sections、会话启动/关闭回调。
@@ -122,6 +147,7 @@ session.close()
 
 ```bash
 ./gradlew :examples:jvm-demo:run          # 离线端到端演示（faux provider）
+./gradlew :examples:mcp-demo:run          # 离线 MCP 演示（本地 mock HTTP server + deferred 工具 + tool_search）
 ./scripts/build-android-demo.sh           # 发布到 ~/.m2 并构建 demo APK
 ```
 
@@ -133,8 +159,8 @@ Android demo 位于 `examples/android-demo`（独立 Gradle 工程），内置�
 ./gradlew build                           # 编译全部 target 并跑测试
 ./gradlew :pi-ai:jvmTest                  # 只跑 JVM 快速测试
 ./gradlew publishToMavenLocal             # 发布 dev.pi:* 到本地
-node scripts/verify-release.mjs 0.1.3     # 校验发布产物（Java 17 字节码/AAR/POM）
-./scripts/release-local.sh 0.1.3          # clean build + 测试 + 本地发布 + demo + 校验和
+node scripts/verify-release.mjs 0.2.0     # 校验发布产物（Java 17 字节码/AAR/POM）
+./scripts/release-local.sh 0.2.0          # clean build + 测试 + 本地发布 + demo + 校验和
 ```
 
 低内存机器用 `./scripts/gw.sh <tasks>` 替代 `./gradlew`（串行化构建）。
@@ -143,12 +169,14 @@ node scripts/verify-release.mjs 0.1.3     # 校验发布产物（Java 17 字节�
 
 - 不含 CLI 与终端 UI：SDK 只暴露事件与 `AgentSession`，界面由宿主应用实现
 - 不兼容 TypeScript 扩展；扩展点使用 Kotlin 工具与 hooks
+- MCP 不支持 codemode 脚本（`codemode` 映射为 deferred + `tool_search`）；sampling/elicitation/roots、resource subscriptions、CIMD 未实现；legacy HTTP+SSE 传输被拒绝
 - OpenAI Codex 传输仅 SSE（WebSocket/zstd 未实现）
 - Amazon Bedrock 凭据仅支持环境变量或 bearer token（无 profile/IMDS/STS 链）
 - Radius 动态模型目录只有占位接口，支持静态 gateway URL
 - 图片不做缩放/格式转换
 - JSON Schema 校验覆盖常用约束关键字与本地 `$ref`/`$defs`；`format` 为子集
-- 未实现：MCP client、codemode 沙箱、虚拟模型、deferred responses、telemetry
+- 未实现：codemode 沙箱、虚拟模型、deferred responses、telemetry
+- Android 仅支持 HTTP MCP server（无 stdio 子进程）
 
 ## 许可证
 

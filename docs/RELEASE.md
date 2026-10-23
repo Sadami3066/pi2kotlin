@@ -1,18 +1,18 @@
 # 发布与产物校验
 
-面向维护者。当前版本：`0.1.3`（`build.gradle.kts` 中 `subprojects.version`）。
+面向维护者。当前版本：`0.2.0`（`build.gradle.kts` 中 `subprojects.version`）。
 
 ## 本地发布流程
 
 ```bash
-./scripts/release-local.sh 0.1.3
+./scripts/release-local.sh 0.2.0
 ```
 
 脚本依次执行：
 
 1. `./gradlew clean build`（JVM + Android target 编译与测试）
 2. `./gradlew publishToMavenLocal`（发布 `dev.pi:pi-ai-jvm`、`pi-ai-android`、`pi-agent-*`、`pi-coding-agent-*`，含 sources jar 与 POM）
-3. `node scripts/verify-release.mjs 0.1.3`（校验产物完整性与字节码版本）
+3. `node scripts/verify-release.mjs 0.2.0`（校验产物完整性与字节码版本）
 4. `./gradlew :examples:jvm-demo:run`（JVM 端到端演示）
 5. 构建 Android demo APK（独立工程，消费本地发布产物）
 6. 生成 `build/release-manifest.txt`（版本、生成时间、jar/aar/apk 的 sha256）
@@ -23,11 +23,11 @@
 
 | 产物 | 路径 |
 |---|---|
-| JVM jar | `~/.m2/repository/dev/pi/<module>-jvm/0.1.3/<module>-jvm-0.1.3.jar` |
-| JVM sources | `~/.m2/repository/dev/pi/<module>-jvm/0.1.3/<module>-jvm-0.1.3-sources.jar` |
-| Gradle metadata | `~/.m2/repository/dev/pi/<module>-jvm/0.1.3/<module>-jvm-0.1.3.module` |
-| POM | `~/.m2/repository/dev/pi/<module>-jvm/0.1.3/<module>-jvm-0.1.3.pom` |
-| Android AAR | `~/.m2/repository/dev/pi/<module>-android/0.1.3/<module>-android-0.1.3.aar` |
+| JVM jar | `~/.m2/repository/dev/pi/<module>-jvm/0.2.0/<module>-jvm-0.2.0.jar` |
+| JVM sources | `~/.m2/repository/dev/pi/<module>-jvm/0.2.0/<module>-jvm-0.2.0-sources.jar` |
+| Gradle metadata | `~/.m2/repository/dev/pi/<module>-jvm/0.2.0/<module>-jvm-0.2.0.module` |
+| POM | `~/.m2/repository/dev/pi/<module>-jvm/0.2.0/<module>-jvm-0.2.0.pom` |
+| Android AAR | `~/.m2/repository/dev/pi/<module>-android/0.2.0/<module>-android-0.2.0.aar` |
 | Demo APK | `examples/android-demo/build/outputs/apk/debug/pi2kotlin-android-demo-debug.apk` |
 
 ## 校验项

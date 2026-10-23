@@ -24,6 +24,10 @@ class AgentPaths(
 
     val trustFile: Path = agentDir / "trust.json"
 
+    val mcpFile: Path = agentDir / "mcp.json"
+
+    val projectMcpFile: Path = cwd / ".pi" / "mcp.json"
+
     fun sessionsForCwd(): Path = sessionDir / encodeCwdName(cwd)
 }
 
