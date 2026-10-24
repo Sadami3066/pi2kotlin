@@ -29,7 +29,7 @@ Dependency direction: `pi-coding-agent` → `pi-agent` → `pi-ai`, and `pi-codi
 
 Artifacts are not on Maven Central yet. Two options:
 
-**Prebuilt artifacts**: download `pi2kotlin-0.2.2-m2.zip` from [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases), unzip it, and point the dependency repository at the unzipped directory:
+**Prebuilt artifacts**: download the latest `pi2kotlin-*-m2.zip` from [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases), unzip it, and point the dependency repository at the unzipped directory:
 
 ```kotlin
 repositories {

@@ -29,7 +29,7 @@
 
 暂未发布到 Maven Central，两种方式：
 
-**直接下载产物**：从 [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases) 下载 `pi2kotlin-0.2.2-m2.zip`，解压后把 repository 指向解压目录：
+**直接下载产物**：从 [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases) 下载最新的 `pi2kotlin-*-m2.zip`，解压后把 repository 指向解压目录：
 
 ```kotlin
 repositories {
