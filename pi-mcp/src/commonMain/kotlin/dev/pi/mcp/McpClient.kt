@@ -10,6 +10,11 @@ import dev.pi.mcp.protocol.JsonRpcRequest
 import dev.pi.mcp.protocol.JsonRpcResponse
 import dev.pi.mcp.protocol.LATEST_PROTOCOL_VERSION
 import dev.pi.mcp.protocol.McpCallResult
+import dev.pi.mcp.protocol.McpClientHandlers
+import dev.pi.mcp.protocol.McpElicitationRequest
+import dev.pi.mcp.protocol.McpElicitationResult
+import dev.pi.mcp.protocol.McpSamplingRequest
+import dev.pi.mcp.protocol.McpSamplingResult
 import dev.pi.mcp.protocol.McpImplementation
 import dev.pi.mcp.protocol.McpInitializeResult
 import dev.pi.mcp.protocol.McpLogMessage
@@ -46,6 +51,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.JsonObject as SerialJsonObject
 
@@ -60,6 +66,7 @@ data class McpClientOptions(
     val protocolVersion: String? = null,
     val requestTimeoutMs: Long = 60_000,
     val capabilities: SerialJsonObject = SerialJsonObject(emptyMap()),
+    val handlers: McpClientHandlers = McpClientHandlers(),
 )
 
 data class McpRequestOptions(
@@ -75,6 +82,8 @@ data class McpNotificationListener(
 )
 
 private const val JSON_RPC_METHOD_NOT_FOUND = -32601
+private const val JSON_RPC_INVALID_PARAMS = -32602
+private const val JSON_RPC_INTERNAL_ERROR = -32603
 private const val MAX_LIST_PAGES = 1_000
 
 class McpClient(
@@ -135,7 +144,7 @@ class McpClient(
             }
             val params = buildJsonObject {
                 put("protocolVersion", requestedVersion)
-                put("capabilities", options.capabilities)
+                put("capabilities", mergedCapabilities())
                 put(
                     "clientInfo",
                     buildJsonObject {
@@ -293,6 +302,12 @@ class McpClient(
 
     fun setNotificationListener(listener: McpNotificationListener?) {
         notificationListener = listener
+    }
+
+    suspend fun notifyRootsChanged() {
+        if (options.handlers.listRoots == null) return
+        requireConnected()
+        transport.send(JsonRpcNotification("notifications/roots/list_changed"))
     }
 
     suspend fun close() {
@@ -478,12 +493,188 @@ class McpClient(
     }
 
     private suspend fun handleServerRequest(message: JsonRpcRequest) {
-        val response: JsonRpcMessage = if (message.method == "ping") {
-            JsonRpcResponse(message.id, JsonObject(emptyMap()))
-        } else {
-            JsonRpcErrorResponse(message.id, JSON_RPC_METHOD_NOT_FOUND, "Method not found: ${message.method}")
+        val response = try {
+            when (message.method) {
+                "ping" -> JsonRpcResponse(message.id, JsonObject(emptyMap()))
+                "roots/list" -> handleListRoots(message)
+                "sampling/createMessage" -> handleSamplingCreateMessage(message)
+                "elicitation/create" -> handleElicitationCreate(message)
+                else -> serverMethodNotFound(message)
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            JsonRpcErrorResponse(
+                message.id,
+                JSON_RPC_INTERNAL_ERROR,
+                "Internal error: ${error.message ?: error.toString()}",
+            )
         }
         runCatching { transport.send(response) }
+    }
+
+    private fun serverMethodNotFound(message: JsonRpcRequest): JsonRpcMessage =
+        JsonRpcErrorResponse(message.id, JSON_RPC_METHOD_NOT_FOUND, "Method not found: ${message.method}")
+
+    private suspend fun handleListRoots(message: JsonRpcRequest): JsonRpcMessage {
+        val handler = options.handlers.listRoots ?: return serverMethodNotFound(message)
+        val roots = try {
+            handler()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            return JsonRpcErrorResponse(
+                message.id,
+                JSON_RPC_INTERNAL_ERROR,
+                "Internal error: ${error.message ?: error.toString()}",
+            )
+        }
+        val encoded = roots.map { root ->
+            buildJsonObject {
+                put("uri", root.uri)
+                root.name?.let { put("name", it) }
+            }
+        }
+        return JsonRpcResponse(message.id, buildJsonObject { put("roots", JsonArray(encoded)) })
+    }
+
+    private suspend fun handleSamplingCreateMessage(message: JsonRpcRequest): JsonRpcMessage {
+        val handler = options.handlers.sample ?: return serverMethodNotFound(message)
+        val request = try {
+            parseSamplingRequest(message.params)
+        } catch (error: McpProtocolException) {
+            return JsonRpcErrorResponse(message.id, JSON_RPC_INVALID_PARAMS, error.message ?: "Invalid params")
+        }
+        val result = try {
+            handler(request)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            return JsonRpcErrorResponse(
+                message.id,
+                JSON_RPC_INTERNAL_ERROR,
+                "Internal error: ${error.message ?: error.toString()}",
+            )
+        }
+        return JsonRpcResponse(message.id, encodeSamplingResult(result))
+    }
+
+    private suspend fun handleElicitationCreate(message: JsonRpcRequest): JsonRpcMessage {
+        val handler = options.handlers.elicit ?: return serverMethodNotFound(message)
+        val request = try {
+            parseElicitationRequest(message.params)
+        } catch (error: McpProtocolException) {
+            return JsonRpcErrorResponse(message.id, JSON_RPC_INVALID_PARAMS, error.message ?: "Invalid params")
+        }
+        val result = try {
+            handler(request)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            return JsonRpcErrorResponse(
+                message.id,
+                JSON_RPC_INTERNAL_ERROR,
+                "Internal error: ${error.message ?: error.toString()}",
+            )
+        }
+        return JsonRpcResponse(message.id, encodeElicitationResult(result))
+    }
+
+    private fun parseSamplingRequest(params: JsonObject?): McpSamplingRequest {
+        val raw = params ?: throw McpProtocolException("Invalid MCP sampling/createMessage params: missing params")
+        val messagesElement = raw["messages"]
+        if (messagesElement !is JsonArray || messagesElement.isEmpty()) {
+            throw McpProtocolException(
+                "Invalid MCP sampling/createMessage params: messages must be a non-empty array",
+            )
+        }
+        val messages = messagesElement.map { element ->
+            element as? JsonObject
+                ?: throw McpProtocolException("Invalid MCP sampling/createMessage params: messages entries must be objects")
+        }
+        val maxTokensElement = raw["maxTokens"]
+        val maxTokens = when {
+            maxTokensElement == null || maxTokensElement is JsonNull -> 4096L
+            else -> (maxTokensElement as? JsonPrimitive)?.takeIf { !it.isString }?.longOrNull
+                ?: throw McpProtocolException("Invalid MCP sampling/createMessage params: maxTokens must be an integer")
+        }
+        val temperatureElement = raw["temperature"]
+        val temperature = when {
+            temperatureElement == null || temperatureElement is JsonNull -> null
+            else -> (temperatureElement as? JsonPrimitive)?.takeIf { !it.isString }?.doubleOrNull
+                ?: throw McpProtocolException(
+                    "Invalid MCP sampling/createMessage params: temperature must be a number",
+                )
+        }
+        val stopSequencesElement = raw["stopSequences"]
+        val stopSequences = when {
+            stopSequencesElement == null || stopSequencesElement is JsonNull -> emptyList()
+            stopSequencesElement is JsonArray -> stopSequencesElement.map { element ->
+                (element as? JsonPrimitive)?.takeIf { it.isString }?.content
+                    ?: throw McpProtocolException(
+                        "Invalid MCP sampling/createMessage params: stopSequences entries must be strings",
+                    )
+            }
+
+            else -> throw McpProtocolException(
+                "Invalid MCP sampling/createMessage params: stopSequences must be an array",
+            )
+        }
+        val modelPreferencesElement = raw["modelPreferences"]
+        val modelPreferences = when {
+            modelPreferencesElement == null || modelPreferencesElement is JsonNull -> null
+            modelPreferencesElement is JsonObject -> modelPreferencesElement
+            else -> throw McpProtocolException(
+                "Invalid MCP sampling/createMessage params: modelPreferences must be an object",
+            )
+        }
+        return McpSamplingRequest(
+            messages = messages,
+            systemPrompt = raw.stringOrNull("systemPrompt"),
+            maxTokens = maxTokens,
+            temperature = temperature,
+            stopSequences = stopSequences,
+            modelPreferences = modelPreferences,
+            raw = raw,
+        )
+    }
+
+    private fun encodeSamplingResult(result: McpSamplingResult): JsonObject = buildJsonObject {
+        put("role", result.role)
+        put("content", JsonArray(result.content))
+        put("model", result.model)
+        result.stopReason?.let { put("stopReason", it) }
+    }
+
+    private fun parseElicitationRequest(params: JsonObject?): McpElicitationRequest {
+        val raw = params ?: throw McpProtocolException("Invalid MCP elicitation/create params: missing params")
+        val message = raw.stringOrNull("message")
+            ?: throw McpProtocolException("Invalid MCP elicitation/create params: message must be a string")
+        val schema = raw["requestedSchema"] as? JsonObject
+            ?: throw McpProtocolException(
+                "Invalid MCP elicitation/create params: requestedSchema must be an object",
+            )
+        return McpElicitationRequest(message = message, requestedSchema = schema, raw = raw)
+    }
+
+    private fun encodeElicitationResult(result: McpElicitationResult): JsonObject = buildJsonObject {
+        put("action", result.action)
+        result.content?.let { put("content", it) }
+    }
+
+    private fun mergedCapabilities(): JsonObject {
+        val merged = LinkedHashMap<String, JsonElement>()
+        options.capabilities.forEach { (key, value) -> merged[key] = value }
+        fun ensure(name: String, defaults: JsonObject) {
+            val existing = merged[name]
+            merged[name] = if (existing is JsonObject) JsonObject(existing + defaults) else defaults
+        }
+        if (options.handlers.listRoots != null) {
+            ensure("roots", buildJsonObject { put("listChanged", true) })
+        }
+        if (options.handlers.sample != null) ensure("sampling", JsonObject(emptyMap()))
+        if (options.handlers.elicit != null) ensure("elicitation", JsonObject(emptyMap()))
+        return JsonObject(merged)
     }
 
     private suspend fun handleNotification(method: String, params: JsonObject?) {

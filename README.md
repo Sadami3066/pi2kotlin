@@ -6,7 +6,7 @@ A Kotlin Multiplatform SDK for building AI agent apps on **Android and the JVM**
 
 [中文文档](README.zh-CN.md)
 
-Status: **0.2.0 alpha**. The library builds, ships Android AARs and JVM JARs, and is covered by 1,000+ JVM tests plus Android host tests. API shape may still change before 1.0.
+Status: **0.2.1 alpha**. The library builds, ships Android AARs and JVM JARs, and is covered by 1,000+ JVM tests plus Android host tests. API shape may still change before 1.0.
 
 ## Modules
 
@@ -29,7 +29,7 @@ Dependency direction: `pi-coding-agent` → `pi-agent` → `pi-ai`, and `pi-codi
 
 Artifacts are not on Maven Central yet. Two options:
 
-**Prebuilt artifacts**: download `pi2kotlin-0.2.0-m2.zip` from [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases), unzip it, and point the dependency repository at the unzipped directory:
+**Prebuilt artifacts**: download `pi2kotlin-0.2.1-m2.zip` from [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases), unzip it, and point the dependency repository at the unzipped directory:
 
 ```kotlin
 repositories {
@@ -48,10 +48,10 @@ Then depend on the variant you need:
 
 ```kotlin
 // JVM
-implementation("dev.pi:pi-coding-agent:0.2.0")
+implementation("dev.pi:pi-coding-agent:0.2.1")
 
 // Android
-implementation("dev.pi:pi-coding-agent-android:0.2.0")
+implementation("dev.pi:pi-coding-agent-android:0.2.1")
 ```
 
 Android apps also need `android.useAndroidX=true`.
@@ -159,8 +159,8 @@ The Android demo lives in `examples/android-demo` (standalone Gradle build) and 
 ./gradlew build                           # compile all targets and run all tests
 ./gradlew :pi-ai:jvmTest                  # fast JVM-only tests
 ./gradlew publishToMavenLocal             # publish dev.pi:* artifacts locally
-node scripts/verify-release.mjs 0.2.0     # verify published artifacts (Java 17 bytecode, AARs, POMs)
-./scripts/release-local.sh 0.2.0          # clean build + tests + local publish + demos + checksums
+node scripts/verify-release.mjs 0.2.1     # verify published artifacts (Java 17 bytecode, AARs, POMs)
+./scripts/release-local.sh 0.2.1          # clean build + tests + local publish + demos + checksums
 ```
 
 On low-memory machines use `./scripts/gw.sh <tasks>` instead of `./gradlew` to serialize Gradle runs.
@@ -169,14 +169,14 @@ On low-memory machines use `./scripts/gw.sh <tasks>` instead of `./gradlew` to s
 
 - No CLI or terminal UI: the SDK exposes events and `AgentSession` for the host app to render.
 - No TypeScript extension compatibility; use Kotlin tools and hooks instead.
-- MCP codemode scripts are not supported (`codemode` exposure maps to deferred + `tool_search`); sampling/elicitation/roots, resource subscriptions and CIMD are not implemented; legacy HTTP+SSE transport is rejected.
+- MCP codemode scripts are not supported (`codemode` exposure maps to deferred + `tool_search`); sampling/elicitation/roots are supported (sampling uses the session model and consumes tokens; elicitation requires a host handler); resource subscriptions, completion and CIMD are not implemented; legacy HTTP+SSE transport is rejected.
 - OpenAI Codex transport is SSE only (WebSocket/zstd not implemented).
 - Amazon Bedrock credentials come from environment variables or a bearer token (no profile/IMDS/STS chain).
 - Radius dynamic model catalog is stubbed; only the static gateway URL is supported.
 - Images are passed through without resizing or format conversion.
 - JSON Schema validation covers common constraint keywords plus local `$ref`/`$defs`; `format` supports a subset.
 - Not implemented: codemode sandbox, virtual models, deferred responses, telemetry.
-- Android supports HTTP MCP servers only (no stdio subprocesses).
+- Android supports HTTP MCP servers only (no stdio subprocesses); Android OAuth needs a host-provided browser callback, and project `.pi/mcp.json` cannot define new servers (only override the global config).
 
 ## License
 

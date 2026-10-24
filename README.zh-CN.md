@@ -6,7 +6,7 @@
 
 [English](README.md)
 
-状态：**0.2.0 alpha**。可编译、可发布 Android AAR 与 JVM JAR；JVM 测试 1,000+、Android host 测试数百；1.0 前 API 仍可能调整。
+状态：**0.2.1 alpha**。可编译、可发布 Android AAR 与 JVM JAR；JVM 测试 1,000+、Android host 测试数百；1.0 前 API 仍可能调整。
 
 ## 模块
 
@@ -29,7 +29,7 @@
 
 暂未发布到 Maven Central，两种方式：
 
-**直接下载产物**：从 [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases) 下载 `pi2kotlin-0.2.0-m2.zip`，解压后把 repository 指向解压目录：
+**直接下载产物**：从 [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases) 下载 `pi2kotlin-0.2.1-m2.zip`，解压后把 repository 指向解压目录：
 
 ```kotlin
 repositories {
@@ -48,10 +48,10 @@ repositories {
 
 ```kotlin
 // JVM
-implementation("dev.pi:pi-coding-agent:0.2.0")
+implementation("dev.pi:pi-coding-agent:0.2.1")
 
 // Android
-implementation("dev.pi:pi-coding-agent-android:0.2.0")
+implementation("dev.pi:pi-coding-agent-android:0.2.1")
 ```
 
 Android 工程还需要 `android.useAndroidX=true`。
@@ -159,8 +159,8 @@ Android demo 位于 `examples/android-demo`（独立 Gradle 工程），内置�
 ./gradlew build                           # 编译全部 target 并跑测试
 ./gradlew :pi-ai:jvmTest                  # 只跑 JVM 快速测试
 ./gradlew publishToMavenLocal             # 发布 dev.pi:* 到本地
-node scripts/verify-release.mjs 0.2.0     # 校验发布产物（Java 17 字节码/AAR/POM）
-./scripts/release-local.sh 0.2.0          # clean build + 测试 + 本地发布 + demo + 校验和
+node scripts/verify-release.mjs 0.2.1     # 校验发布产物（Java 17 字节码/AAR/POM）
+./scripts/release-local.sh 0.2.1          # clean build + 测试 + 本地发布 + demo + 校验和
 ```
 
 低内存机器用 `./scripts/gw.sh <tasks>` 替代 `./gradlew`（串行化构建）。
@@ -169,14 +169,14 @@ node scripts/verify-release.mjs 0.2.0     # 校验发布产物（Java 17 字节�
 
 - 不含 CLI 与终端 UI：SDK 只暴露事件与 `AgentSession`，界面由宿主应用实现
 - 不兼容 TypeScript 扩展；扩展点使用 Kotlin 工具与 hooks
-- MCP 不支持 codemode 脚本（`codemode` 映射为 deferred + `tool_search`）；sampling/elicitation/roots、resource subscriptions、CIMD 未实现；legacy HTTP+SSE 传输被拒绝
+- MCP 不支持 codemode 脚本（`codemode` 映射为 deferred + `tool_search`）；sampling/elicitation/roots 已支持（sampling 用当前会话模型、会消耗 token；elicitation 需宿主提供 handler）；resource subscriptions、completion、CIMD 未实现；legacy HTTP+SSE 传输被拒绝
 - OpenAI Codex 传输仅 SSE（WebSocket/zstd 未实现）
 - Amazon Bedrock 凭据仅支持环境变量或 bearer token（无 profile/IMDS/STS 链）
 - Radius 动态模型目录只有占位接口，支持静态 gateway URL
 - 图片不做缩放/格式转换
 - JSON Schema 校验覆盖常用约束关键字与本地 `$ref`/`$defs`；`format` 为子集
 - 未实现：codemode 沙箱、虚拟模型、deferred responses、telemetry
-- Android 仅支持 HTTP MCP server（无 stdio 子进程）
+- Android 仅支持 HTTP MCP server（无 stdio 子进程）；Android OAuth 需宿主提供浏览器回调；项目 `.pi/mcp.json` 不能新增 server（只能覆盖全局配置）
 
 ## 许可证
 

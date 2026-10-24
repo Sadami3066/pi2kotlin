@@ -12,7 +12,7 @@ android {
         minSdk = 26
         targetSdk = 36
         versionCode = 1
-        versionName = "0.2.0"
+        versionName = "0.2.1"
     }
 
     compileOptions {
@@ -29,6 +29,6 @@ kotlin {
 }
 
 dependencies {
-    implementation("dev.pi:pi-coding-agent-android:0.2.0")
+    implementation("dev.pi:pi-coding-agent-android:0.2.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 }

@@ -16,6 +16,12 @@ data class McpOptions(
     val outputDirectory: Path? = null,
     val autoEnableToolSearch: Boolean = true,
     val transportFactory: McpTransportFactory? = null,
+    val samplingEnabled: Boolean = true,
+    val samplingMaxTokens: Long = 4096,
+    val samplingTemperature: Double? = null,
+    val rootsEnabled: Boolean = true,
+    val roots: List<dev.pi.mcp.protocol.McpRoot> = emptyList(),
+    val elicitationHandler: (suspend (dev.pi.mcp.protocol.McpElicitationRequest) -> dev.pi.mcp.protocol.McpElicitationResult)? = null,
 )
 
 enum class McpServerState {

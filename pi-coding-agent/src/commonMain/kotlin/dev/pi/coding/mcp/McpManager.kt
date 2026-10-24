@@ -44,6 +44,9 @@ class McpManager internal constructor(
     private val callbacks: McpManagerCallbacks,
     private val oauthHttp: dev.pi.ai.http.HttpTransport? = null,
     private val oauthTokenStore: dev.pi.mcp.oauth.McpTokenStore? = null,
+    roots: List<dev.pi.mcp.protocol.McpRoot>? = null,
+    private val samplingHandler: (suspend (dev.pi.mcp.protocol.McpSamplingRequest) -> dev.pi.mcp.protocol.McpSamplingResult)? = null,
+    private val elicitationHandler: (suspend (dev.pi.mcp.protocol.McpElicitationRequest) -> dev.pi.mcp.protocol.McpElicitationResult)? = null,
 ) {
     private val mutex = Mutex()
     private val connections = LinkedHashMap<String, McpServerConnection>()
@@ -53,6 +56,17 @@ class McpManager internal constructor(
         outputDirectory = options.outputDirectory,
     )
     private val prompts = McpPrompts()
+    private var currentRoots: List<dev.pi.mcp.protocol.McpRoot> = roots.orEmpty()
+    private val rootsEnabled: Boolean = roots != null
+    private val clientHandlers = dev.pi.mcp.protocol.McpClientHandlers(
+        listRoots = if (rootsEnabled) {
+            { currentRoots }
+        } else {
+            null
+        },
+        sample = samplingHandler,
+        elicit = elicitationHandler,
+    )
     private var started = false
     private var closed = false
 
@@ -100,6 +114,7 @@ class McpManager internal constructor(
         onStatus = { status -> updateStatus(status) },
         onTools = { added, removed -> updateTools(name, added, removed) },
         authProvider = createAuthProvider(name, config),
+        handlers = clientHandlers,
     )
 
     private fun createAuthProvider(name: String, config: McpServerConfig): dev.pi.mcp.oauth.McpAuthProvider? {
@@ -240,6 +255,14 @@ class McpManager internal constructor(
         previous?.copy(state = McpServerState.Closed)
     }
 
+    suspend fun setRoots(roots: List<dev.pi.mcp.protocol.McpRoot>) {
+        if (!rootsEnabled || currentRoots == roots) return
+        currentRoots = roots
+        for (connection in connections.values) {
+            connection.notifyRootsChanged()
+        }
+    }
+
     suspend fun reconnect(name: String): McpServerStatus? {
         val connection = connections[name] ?: return null
         connection.close()
@@ -367,6 +390,7 @@ private class McpServerConnection(
     private val onStatus: suspend (McpServerStatus) -> Unit,
     private val onTools: suspend (List<CodingTool>, Set<String>) -> Unit,
     private val authProvider: dev.pi.mcp.oauth.McpAuthProvider? = null,
+    private val handlers: dev.pi.mcp.protocol.McpClientHandlers = dev.pi.mcp.protocol.McpClientHandlers(),
 ) {
     private val mutex = Mutex()
     private var transport: McpTransport? = null
@@ -387,6 +411,10 @@ private class McpServerConnection(
     val hasResources: Boolean get() = capabilities?.hasResources == true
 
     fun clientOrNull(): McpClient? = client
+
+    suspend fun notifyRootsChanged() {
+        client?.notifyRootsChanged()
+    }
 
     fun exposedToolNames(): Set<String> = adapted.keys
 
@@ -450,7 +478,10 @@ private class McpServerConnection(
             val newClient = McpClient(
                 name,
                 newTransport,
-                McpClientOptions(requestTimeoutMs = config.timeoutSeconds * 1_000),
+                McpClientOptions(
+                    requestTimeoutMs = config.timeoutSeconds * 1_000,
+                    handlers = handlers,
+                ),
             )
             val initialized = newClient.initialize()
             (newTransport as? StreamableHttpTransport)?.let { http ->

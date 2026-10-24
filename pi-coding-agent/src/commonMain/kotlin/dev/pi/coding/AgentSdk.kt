@@ -225,7 +225,7 @@ suspend fun createAgentSession(options: AgentSessionOptions): AgentSession {
     )
     session.start()
     if (options.mcp.enabled) {
-        attachMcp(options, paths, settings, scope, session, options.mcp)
+        attachMcp(options, paths, settings, scope, session, options.mcp, modelRuntime, model)
     }
     options.hooks.onSessionStart?.invoke(session)
     return session
@@ -281,6 +281,8 @@ private suspend fun attachMcp(
     scope: CoroutineScope,
     session: AgentSession,
     mcpOptions: McpOptions,
+    modelRuntime: ModelRuntime,
+    model: dev.pi.ai.Model,
 ) {
     val loaded = if (mcpOptions.loadConfig) {
         McpConfigLoader(paths, options.fs, settings).load(options.env)
@@ -313,6 +315,24 @@ private suspend fun attachMcp(
             dev.pi.mcp.oauth.defaultMcpAuthFile(paths.agentDir),
             options.fs,
         ),
+        roots = if (mcpOptions.rootsEnabled) {
+            mcpOptions.roots.ifEmpty {
+                listOf(
+                    dev.pi.mcp.protocol.McpRoot(
+                        uri = "file://" + options.cwd.normalized().toString(),
+                        name = options.cwd.name.ifBlank { "workspace" },
+                    ),
+                )
+            }
+        } else {
+            null
+        },
+        samplingHandler = if (mcpOptions.samplingEnabled) {
+            { request -> dev.pi.coding.mcp.McpSampling.complete(modelRuntime, model, request, mcpOptions) }
+        } else {
+            null
+        },
+        elicitationHandler = mcpOptions.elicitationHandler,
     )
     session.attachMcpManager(manager)
     manager.start()

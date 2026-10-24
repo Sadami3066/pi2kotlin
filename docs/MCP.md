@@ -1,6 +1,6 @@
 # MCP 接入指南
 
-pi2kotlin 0.2.0 起内置 MCP（Model Context Protocol）客户端，支持把第三方 MCP server 的工具、资源、提示词接入 agent 会话。
+pi2kotlin 0.2.0 起内置 MCP（Model Context Protocol）客户端，0.2.1 补齐 sampling / elicitation / roots，支持把第三方 MCP server 的工具、资源、提示词接入 agent 会话。
 
 ## 支持范围
 
@@ -14,7 +14,10 @@ pi2kotlin 0.2.0 起内置 MCP（Model Context Protocol）客户端，支持把�
 | prompts：list/get、`session.promptMcp(...)`、`/mcp__<server>__<prompt>` 斜杠命令 | 支持 |
 | OAuth 2.1：受保护资源发现、RFC 8414/OIDC、DCR、PKCE、refresh、scope step-up、token 持久化 | 支持（CIMD 不支持） |
 | `tools/list_changed`、日志/进度通知 | 支持 |
-| sampling / elicitation / roots / resource subscriptions / completion | 0.3.0 计划，当前返回不支持 |
+| roots（工作区根目录声明、`roots/list_changed`） | 支持（默认返回 `cwd`，可配置/更新） |
+| sampling（server 请求宿主用当前模型生成） | 支持（默认启用，可用 `samplingEnabled = false` 关闭） |
+| elicitation（server 请求宿主向用户收集输入） | 支持（需宿主提供 `elicitationHandler`；未提供时不声明该能力） |
+| resource subscriptions / completion / CIMD | 未实现 |
 | legacy HTTP+SSE 传输 | 不支持（配置 `type:"sse"` 会报错） |
 
 ## 快速开始
@@ -142,7 +145,45 @@ val result = session.mcp.signIn(
 - token 持久化到 `<agentDir>/mcp-auth.json`（原子写，0600）。
 - 自动 refresh（提前 30 秒）、401 重试一次、403 `insufficient_scope` step-up。
 - JVM 可用 `dev.pi.mcp.oauth.LoopbackCallbackServer` 起本地回调；Android 需要宿主提供浏览器回调（示例见 `examples/android-demo`）。
-- `auth.provider` 可复用 SDK 已登录的 provider token（仅 https 或 loopback，项目配置不可用）。
+- `auth.provider`（复用 SDK 已登录的 provider token）目前**只解析配置、未接线**，请不要依赖；0.3.0 再补。
+
+## roots / sampling / elicitation
+
+这三个是 MCP 的客户端能力，由 `McpOptions` 控制：
+
+```kotlin
+McpOptions(
+    // roots：默认返回 file://<cwd>；可显式配置，运行时可更新
+    roots = listOf(McpRoot(uri = "file:///data/user/0/app/files/workspace", name = "workspace")),
+    rootsEnabled = true,
+
+    // sampling：server 调用宿主模型；默认启用，可关闭
+    samplingEnabled = true,
+    samplingMaxTokens = 4096,
+    samplingTemperature = null,
+
+    // elicitation：server 请求用户输入，由宿主 UI 实现
+    elicitationHandler = { request ->
+        // request.message 是提示文案，request.requestedSchema 是 JSON Schema 表单
+        val accepted = showForm(request.message, request.requestedSchema)
+        McpElicitationResult(
+            action = if (accepted != null) "accept" else "decline",
+            content = accepted,
+        )
+    },
+)
+```
+
+行为与注意事项：
+
+- **roots**：`roots/list` 返回配置的根目录；`rootsEnabled=false` 时不声明能力。运行时更新：
+  ```kotlin
+  session.mcp.setRoots(listOf(McpRoot("file:///new-workspace")))
+  ```
+  会自动发送 `notifications/roots/list_changed`。
+- **sampling**：server 发 `sampling/createMessage` 时，SDK 用**当前会话模型**发一次非流式请求（`maxTokens` 取 min(server 请求值, `samplingMaxTokens`, 模型上限)），支持 text/image 输入，返回 text/image。这是真实模型调用，**会消耗 token**；不需要时设置 `samplingEnabled = false`（不声明能力，server 不会请求）。sampling 请求发生在工具执行期间，不会推进 agent 会话轮次。
+- **elicitation**：只有提供 `elicitationHandler` 才声明能力。handler 收到 `message` + `requestedSchema`，返回 `action` 为 `"accept"`（可带符合 schema 的 `content`）、`"decline"` 或 `"cancel"`。没有 handler 时能力不声明；若 server 仍强行请求会收到 `-32601`。Android/JVM 的 UI 由宿主实现，SDK 不弹窗。
+- 三者都不影响普通 MCP 工具/资源/prompt。
 
 ## 运行时管理
 
@@ -184,7 +225,10 @@ session.events.collect { event ->
 - 项目配置仅在项目被信任时读取，且只能覆盖 `enabled`/`exposure`/`toolExposure`。
 - 不执行 `!command` 插值；HTTP 要求 https（loopback 例外）。
 - 输出默认按 20KB 中间截断（全文可落盘），单 SSE 事件上限 16MB，每请求默认 60 秒超时。
-- 不支持：codemode JS 沙箱、legacy SSE、CIMD、sampling/elicitation/roots、resource subscriptions、MCP prompts 之外的 UI 资源（`ui://`）。
+- 不支持：codemode JS 沙箱、legacy SSE、CIMD、resource subscriptions、completion、MCP prompts 之外的 UI 资源（`ui://`）。
+- Android OAuth 仍需宿主提供浏览器回调与 redirect URI（JVM 内置 loopback）。
+- 项目 `.pi/mcp.json` 只能覆盖全局 server 的 enabled/exposure/toolExposure，不能新增 server。
+- `auth.provider` 配置解析但未接线。
 
 ## 示例
 
