@@ -9,8 +9,10 @@ import dev.pi.ai.providers.fauxAssistantMessage
 import dev.pi.ai.TranscriptContext
 import dev.pi.ai.SimpleStreamOptions
 import dev.pi.ai.providers.FauxProviderHandle
+import dev.pi.ai.utils.getCurrentSystemMessage
 import dev.pi.ai.utils.getSystemMessageText
 import dev.pi.coding.session.AgentSession
+import dev.pi.coding.session.CodingHooks
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -105,6 +107,66 @@ class SessionConfigScenarioTest {
                 assertTrue(sections!!["environment"]!!.contains("Node 22."))
                 assertTrue(getSystemMessageText(system).contains("Node 22."))
                 assertTrue(session.agent.state.messages.first().asLlmMessage() is SystemMessage)
+            } finally {
+                session.close()
+            }
+        }
+    }
+
+    @Test
+    fun initialSystemPromptSectionsSeedTheFirstSnapshotOnly() = runBlocking {
+        withTimeout(20_000) {
+            val fs = ScenarioSupport.fileSystem()
+            val faux = ScenarioSupport.faux()
+            var sections = mapOf("environment" to "day one")
+            val contexts = mutableListOf<TranscriptContext>()
+            faux.setResponses(
+                listOf(
+                    FauxResponseStep.Scripted(
+                        object : FauxResponseFactory {
+                            override suspend fun produce(
+                                context: TranscriptContext,
+                                options: SimpleStreamOptions?,
+                                state: FauxProviderState,
+                                model: dev.pi.ai.Model,
+                            ): dev.pi.ai.AssistantMessage {
+                                contexts += context
+                                return fauxAssistantMessage("ok")
+                            }
+                        },
+                    ),
+                    FauxResponseStep.Scripted(
+                        object : FauxResponseFactory {
+                            override suspend fun produce(
+                                context: TranscriptContext,
+                                options: SimpleStreamOptions?,
+                                state: FauxProviderState,
+                                model: dev.pi.ai.Model,
+                            ): dev.pi.ai.AssistantMessage {
+                                contexts += context
+                                return fauxAssistantMessage("ok")
+                            }
+                        },
+                    ),
+                ),
+            )
+            val hooks = CodingHooks(extraSystemPromptSections = { sections })
+            val session = ScenarioSupport.create(
+                fs,
+                listOf(faux.provider),
+                hooks = hooks,
+                initialSystemPromptSections = sections,
+            )
+            try {
+                session.prompt("first")
+                val first = getCurrentSystemMessage(contexts.first().messages.mapNotNull { it as? SystemMessage })
+                assertEquals("day one", first?.sections?.get("environment"))
+                assertEquals(1, contexts.first().messages.count { it is SystemMessage })
+
+                sections = emptyMap()
+                session.prompt("second")
+                val second = getCurrentSystemMessage(contexts.last().messages.mapNotNull { it as? SystemMessage })
+                assertFalse(second?.sections?.containsKey("environment") ?: false)
             } finally {
                 session.close()
             }

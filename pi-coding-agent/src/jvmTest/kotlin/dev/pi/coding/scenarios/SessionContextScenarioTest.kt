@@ -151,6 +151,47 @@ class SessionContextScenarioTest {
     }
 
     @Test
+    fun stableHookSectionsDoNotAppendSystemPatchesEachTurn() = runBlocking {
+        withTimeout(30_000) {
+            val fs = ScenarioSupport.fileSystem()
+            val sections = mapOf("environment" to "stable environment")
+            val hooks = CodingHooks(extraSystemPromptSections = { sections })
+            val faux = ScenarioSupport.faux()
+            faux.setResponses(
+                listOf(
+                    FauxResponseStep.Fixed(fauxAssistantMessage("one")),
+                    FauxResponseStep.Fixed(fauxAssistantMessage("two")),
+                    FauxResponseStep.Fixed(fauxAssistantMessage("three")),
+                ),
+            )
+            val session = ScenarioSupport.create(
+                fs,
+                listOf(faux.provider),
+                hooks = hooks,
+                initialSystemPromptSections = sections,
+            )
+            val sessionFile: okio.Path
+            try {
+                session.prompt("first")
+                session.prompt("second")
+                session.prompt("third")
+                sessionFile = session.sessionFile!!
+            } finally {
+                session.close()
+            }
+            val lines = ScenarioSupport.read(fs, sessionFile).trim().lines()
+            val entries = lines.drop(1).filter { it.isNotBlank() }.mapNotNull { line ->
+                decodeSessionEntry(sessionJson.parseToJsonElement(line).jsonObject)
+            }
+            val systemMessages = entries.filterIsInstance<SessionMessageEntry>()
+                .map { it.message }
+                .filterIsInstance<SystemMessage>()
+            assertEquals(1, systemMessages.size)
+            assertEquals("stable environment", systemMessages.single().sections?.get("environment"))
+        }
+    }
+
+    @Test
     fun expandsPromptTemplatesBeforeSending() = runBlocking {
         withTimeout(30_000) {
             val fs = ScenarioSupport.fileSystem()

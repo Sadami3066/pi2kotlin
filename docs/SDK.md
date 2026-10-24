@@ -6,11 +6,11 @@
 
 ```kotlin
 dependencies {
-    implementation("dev.pi:pi-coding-agent:0.2.1")
+    implementation("dev.pi:pi-coding-agent:0.2.2")
 }
 ```
 
-Android 使用 `dev.pi:pi-coding-agent-android:0.2.1`。产物暂未发布到 Maven Central，先执行 `./gradlew publishToMavenLocal`。
+Android 使用 `dev.pi:pi-coding-agent-android:0.2.2`。产物暂未发布到 Maven Central，先执行 `./gradlew publishToMavenLocal`。
 
 模块：`pi-ai`（LLM 统一层）→ `pi-agent`（agent 循环）→ `pi-coding-agent`（会话/工具/提示词/SDK 门面）。targets：Android（minSdk 26）+ JVM（Java 17 字节码）。
 
@@ -121,6 +121,8 @@ CodingHooks(
     onSessionShutdown = { session -> /* ... */ },
 )
 ```
+
+`AgentSessionOptions.extraSystemPromptSections` 是每次请求都会参与的静态段；`initialSystemPromptSections` 只写入会话首条 system 快照，用于给 hook 动态生成的段（环境、偏好、插件状态等）提供初始值。二者通常配合使用：新建会话时首条快照已包含动态段，后续只有值变化时才追加 system patch。
 
 ## 平台接入
 

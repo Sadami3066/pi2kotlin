@@ -80,6 +80,7 @@ data class AgentSessionOptions(
     val providers: List<dev.pi.ai.Provider> = emptyList(),
     val env: Map<String, String> = emptyMap(),
     val extraSystemPromptSections: Map<String, String> = emptyMap(),
+    val initialSystemPromptSections: Map<String, String> = emptyMap(),
     val projectTrusted: Boolean? = null,
     val mcp: dev.pi.coding.mcp.McpOptions = dev.pi.coding.mcp.McpOptions(),
 )
@@ -248,10 +249,11 @@ private fun buildFreshSections(
             cwd = options.cwd,
         ),
     )
-    return if (options.extraSystemPromptSections.isEmpty()) {
+    val extras = options.extraSystemPromptSections + options.initialSystemPromptSections
+    return if (extras.isEmpty()) {
         built
     } else {
-        SystemPromptSections(built.sections + options.extraSystemPromptSections)
+        SystemPromptSections(built.sections + extras)
     }
 }
 
