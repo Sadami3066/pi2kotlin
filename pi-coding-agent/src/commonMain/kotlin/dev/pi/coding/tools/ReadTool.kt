@@ -7,11 +7,18 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
+import okio.Buffer
+import okio.BufferedSource
 import okio.FileSystem
 import okio.Path
 import okio.Path.Companion.toPath
+import okio.buffer
 
 private const val IMAGE_SNIFF_BYTES = 4100
+
+private const val MAX_INLINE_IMAGE_BYTES = 8L * 1024 * 1024
+
+private const val NEWLINE_BYTE = '\n'.code.toByte()
 
 private val pngSignature = byteArrayOf(0x89.toByte(), 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)
 private val amPmPattern = Regex(" (AM|PM)\\.", RegexOption.IGNORE_CASE)
@@ -55,70 +62,210 @@ fun readTool(cwd: Path, fs: FileSystem): CodingTool = CodingTool(
             throw IllegalArgumentException("EISDIR: illegal operation on a directory, read")
         }
         signal?.throwIfAborted()
-        val bytes = fs.read(absolutePath) { readByteArray() }
-        signal?.throwIfAborted()
-        val mimeType = detectImageMimeType(bytes)
+        val mimeType = detectImageMimeType(readHeadBytes(fs, absolutePath))
         when {
-            mimeType == null -> textResult(readTextFile(bytes, pathInput, offset, limit))
-            mimeType in inlineImageMimeTypes -> imageResult(
-                data = Base64.Default.encode(bytes),
-                mimeType = mimeType,
-                text = "Read image file [$mimeType]",
-            )
-            else -> textResult(
-                "Read image file [$mimeType]\n[Image omitted: could not be converted to a supported inline image format.]",
-            )
+            mimeType == null -> textResult(readTextFile(fs, absolutePath, pathInput, offset, limit))
+            mimeType in inlineImageMimeTypes -> imageResultForFile(fs, absolutePath, metadata.size, mimeType)
+            else -> textResult(unsupportedImageMessage(mimeType))
         }
     },
 )
 
-private fun readTextFile(bytes: ByteArray, pathInput: String, offset: Int?, limit: Int?): String {
-    val textContent = bytes.decodeToString()
-    val allLines = textContent.split("\n")
-    val totalFileLines = allLines.size
-    val startLine = if (offset != null) maxOf(0, offset - 1) else 0
+private fun imageResultForFile(fs: FileSystem, path: Path, size: Long?, mimeType: String) = when {
+    size != null && size > MAX_INLINE_IMAGE_BYTES -> textResult(oversizedImageMessage(mimeType, size))
+    else -> {
+        val bytes = if (size != null) {
+            fs.read(path) { readByteArray() }
+        } else {
+            readBytesUpTo(fs, path, MAX_INLINE_IMAGE_BYTES)
+        }
+        if (bytes == null) {
+            textResult("Read image file [$mimeType]\n[Image omitted: file exceeds ${formatSize(MAX_INLINE_IMAGE_BYTES)} inline limit.]")
+        } else {
+            imageResult(
+                data = Base64.Default.encode(bytes),
+                mimeType = mimeType,
+                text = "Read image file [$mimeType]",
+            )
+        }
+    }
+}
+
+private fun oversizedImageMessage(mimeType: String, size: Long): String =
+    "Read image file [$mimeType]\n[Image omitted: file is ${formatSize(size)}, " +
+        "exceeds ${formatSize(MAX_INLINE_IMAGE_BYTES)} inline limit.]"
+
+private fun unsupportedImageMessage(mimeType: String): String =
+    "Read image file [$mimeType]\n[Image omitted: could not be converted to a supported inline image format.]"
+
+private fun readHeadBytes(fs: FileSystem, path: Path): ByteArray {
+    val source = fs.source(path).buffer()
+    try {
+        val buffer = Buffer()
+        var remaining = IMAGE_SNIFF_BYTES.toLong()
+        while (remaining > 0L) {
+            val read = source.read(buffer, remaining)
+            if (read == -1L) break
+            remaining -= read
+        }
+        return buffer.readByteArray()
+    } finally {
+        source.close()
+    }
+}
+
+private fun readBytesUpTo(fs: FileSystem, path: Path, maxBytes: Long): ByteArray? {
+    val source = fs.source(path).buffer()
+    try {
+        val buffer = Buffer()
+        var remaining = maxBytes + 1
+        while (remaining > 0L) {
+            val read = source.read(buffer, remaining)
+            if (read == -1L) break
+            remaining -= read
+        }
+        return if (buffer.size > maxBytes) null else buffer.readByteArray()
+    } finally {
+        source.close()
+    }
+}
+
+private fun readTextFile(fs: FileSystem, path: Path, pathInput: String, offset: Int?, limit: Int?): String {
+    val source = fs.source(path).buffer()
+    try {
+        return streamTextOutput(LineReader(source), pathInput, offset, limit)
+    } finally {
+        source.close()
+    }
+}
+
+private fun streamTextOutput(
+    reader: LineReader,
+    pathInput: String,
+    offset: Int?,
+    limit: Int?,
+): String {
+    val startLine = if (offset != null) maxOf(0, offset - 1).toLong() else 0L
+    val userLimit = limit?.toLong() ?: -1L
+    val materialized = mutableListOf<String>()
+    var materializedBytes = 0
+    var truncated = false
+    var truncatedBy: String? = null
+    var firstSelectedLineBytes = 0
+    var lineIndex = 0L
+    while (true) {
+        val selectedIndex = lineIndex - startLine
+        val discarding = lineIndex < startLine ||
+            truncated ||
+            (userLimit >= 0L && selectedIndex >= userLimit)
+        val line = reader.readLine(discarding) ?: break
+        lineIndex += 1L
+        if (discarding) continue
+        val lineBytes = utf8Length(line)
+        if (materialized.isEmpty()) {
+            firstSelectedLineBytes = lineBytes
+            if (lineBytes > DEFAULT_MAX_BYTES) {
+                truncated = true
+                truncatedBy = "bytes"
+            } else {
+                materialized.add(line)
+                materializedBytes = lineBytes
+            }
+        } else if (materialized.size >= DEFAULT_MAX_LINES) {
+            truncated = true
+            truncatedBy = "lines"
+        } else {
+            val lineCost = lineBytes + 1
+            if (materializedBytes + lineCost > DEFAULT_MAX_BYTES) {
+                truncated = true
+                truncatedBy = "bytes"
+            } else {
+                materialized.add(line)
+                materializedBytes += lineCost
+            }
+        }
+    }
+
+    val totalLines = reader.newlineCount + 1
+    if (startLine >= totalLines) {
+        throw IllegalArgumentException("Offset $offset is beyond end of file ($totalLines lines total)")
+    }
     val startLineDisplay = startLine + 1
-    if (startLine >= allLines.size) {
-        throw IllegalArgumentException("Offset $offset is beyond end of file (${allLines.size} lines total)")
-    }
-
-    val selectedContent: String
-    var userLimitedLines: Int? = null
-    if (limit != null) {
-        val endLine = minOf(startLine + limit, allLines.size)
-        selectedContent = allLines.subList(startLine, endLine).joinToString("\n")
-        userLimitedLines = endLine - startLine
-    } else {
-        selectedContent = allLines.subList(startLine, allLines.size).joinToString("\n")
-    }
-
-    val truncation = truncateHead(selectedContent)
+    val output = materialized.joinToString("\n")
+    val userLimitedLines = if (limit != null) minOf(limit.toLong(), totalLines - startLine) else null
     return when {
-        truncation.truncated && truncation.text.isEmpty() -> {
-            val firstLineSize = formatSize(utf8Length(allLines[startLine]))
+        truncated && output.isEmpty() -> {
+            val firstLineSize = formatSize(firstSelectedLineBytes)
             "[Line $startLineDisplay is $firstLineSize, exceeds ${formatSize(DEFAULT_MAX_BYTES)} limit. Use bash: sed -n '${startLineDisplay}p' $pathInput | head -c $DEFAULT_MAX_BYTES]"
         }
 
-        truncation.truncated -> {
-            val outputLines = lineCount(truncation.text)
+        truncated -> {
+            val outputLines = lineCount(output)
             val endLineDisplay = startLineDisplay + outputLines - 1
             val nextOffset = endLineDisplay + 1
-            if (truncation.truncatedBy == "lines") {
-                truncation.text +
-                    "\n\n[Showing lines $startLineDisplay-$endLineDisplay of $totalFileLines. Use offset=$nextOffset to continue.]"
+            if (truncatedBy == "lines") {
+                output +
+                    "\n\n[Showing lines $startLineDisplay-$endLineDisplay of $totalLines. Use offset=$nextOffset to continue.]"
             } else {
-                truncation.text +
-                    "\n\n[Showing lines $startLineDisplay-$endLineDisplay of $totalFileLines (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=$nextOffset to continue.]"
+                output +
+                    "\n\n[Showing lines $startLineDisplay-$endLineDisplay of $totalLines (${formatSize(DEFAULT_MAX_BYTES)} limit). Use offset=$nextOffset to continue.]"
             }
         }
 
-        userLimitedLines != null && startLine + userLimitedLines < allLines.size -> {
-            val remaining = allLines.size - (startLine + userLimitedLines)
+        userLimitedLines != null && startLine + userLimitedLines < totalLines -> {
+            val remaining = totalLines - (startLine + userLimitedLines)
             val nextOffset = startLine + userLimitedLines + 1
-            truncation.text + "\n\n[$remaining more lines in file. Use offset=$nextOffset to continue.]"
+            output + "\n\n[$remaining more lines in file. Use offset=$nextOffset to continue.]"
         }
 
-        else -> truncation.text
+        else -> output
+    }
+}
+
+private class LineReader(private val source: BufferedSource) {
+    var newlineCount: Long = 0L
+        private set
+
+    private var emitted = false
+    private var lastTerminated = false
+    private var finished = false
+
+    fun readLine(discard: Boolean): String? {
+        if (finished) return null
+        if (source.exhausted()) {
+            finished = true
+            if (!emitted || lastTerminated) {
+                emitted = true
+                lastTerminated = false
+                return ""
+            }
+            return null
+        }
+        val newlineIndex = source.indexOf(NEWLINE_BYTE)
+        if (newlineIndex < 0L) {
+            val text = if (discard) {
+                source.skip(source.buffer.size)
+                ""
+            } else {
+                source.readUtf8()
+            }
+            finished = true
+            emitted = true
+            lastTerminated = false
+            return text
+        }
+        val text = if (discard) {
+            source.skip(newlineIndex + 1)
+            ""
+        } else {
+            val content = source.readUtf8(newlineIndex)
+            source.skip(1)
+            content
+        }
+        newlineCount += 1L
+        emitted = true
+        lastTerminated = true
+        return text
     }
 }
 

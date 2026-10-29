@@ -67,6 +67,7 @@ class SessionManager private constructor(
     private val labelTimestampsById: MutableMap<String, String> = LinkedHashMap()
     private var leafIdValue: String? = null
     private var flushed: Boolean = false
+    private var appendTailVerified: Boolean = false
     private var lastUuidV7Timestamp: Long = -1L
     private var uuidV7Sequence: Long? = null
 
@@ -608,6 +609,10 @@ class SessionManager private constructor(
             flushed = true
             return
         }
+        if (!appendTailVerified) {
+            ensureTrailingNewline(file)
+            appendTailVerified = true
+        }
         file.parent?.let { parent -> if (!fs.exists(parent)) fs.createDirectories(parent) }
         val sink = fs.appendingSink(file).buffer()
         try {
@@ -615,6 +620,20 @@ class SessionManager private constructor(
             sink.writeUtf8("\n")
         } finally {
             sink.close()
+        }
+    }
+
+    private fun ensureTrailingNewline(file: Path) {
+        if (!fs.exists(file)) return
+        val size = fs.metadataOrNull(file)?.size ?: return
+        if (size == 0L) return
+        val lastByte = fs.openReadOnly(file).use { handle ->
+            val buffer = okio.Buffer()
+            if (handle.read(size - 1, buffer, 1) != 1L) return
+            buffer.readByte()
+        }
+        if (lastByte != NEWLINE_BYTE) {
+            fs.appendingSink(file).buffer().use { sink -> sink.writeByte(NEWLINE_BYTE.toInt()) }
         }
     }
 
@@ -630,6 +649,7 @@ class SessionManager private constructor(
                 writeUtf8("\n")
             }
         }
+        appendTailVerified = true
     }
 
     private fun hasConversation(): Boolean = entries.any { entry ->
@@ -929,6 +949,10 @@ class SessionManager private constructor(
             } catch (_: Exception) {
                 return null
             }
+            return parseSessionObjects(text)
+        }
+
+        private fun parseSessionObjects(text: String): List<JsonObject>? {
             if (text.isBlank()) return null
             val objects = mutableListOf<JsonObject>()
             for (line in text.lineSequence()) {
@@ -963,7 +987,13 @@ class SessionManager private constructor(
         }
 
         private fun loadSession(file: Path, fs: FileSystem): LoadedSession? {
-            val objects = readSessionObjects(file, fs)?.toMutableList() ?: return null
+            val bytes = try {
+                fs.read(file) { readByteArray() }
+            } catch (_: Exception) {
+                return null
+            }
+            val repaired = repairSessionTail(file, fs, bytes)
+            val objects = parseSessionObjects(repaired.decodeToString())?.toMutableList() ?: return null
             if (objects.isEmpty()) return null
             val first = objects.first()
             if (first.stringValue("type") != "session") return null
@@ -972,6 +1002,90 @@ class SessionManager private constructor(
             val header = runCatching { decodeSessionHeader(objects.first()) }.getOrNull() ?: return null
             val decodedEntries = objects.drop(1).mapNotNull { decodeSessionEntry(it) }
             return LoadedSession(header, decodedEntries, migrated)
+        }
+
+        private fun repairSessionTail(file: Path, fs: FileSystem, bytes: ByteArray): ByteArray {
+            if (bytes.isEmpty()) return bytes
+            var lineStart = 0
+            var candidateEnd = 0
+            var tailBroken = false
+            var hasNonBlank = false
+            var lastNonBlankValid = true
+            while (true) {
+                var newlineIndex = -1
+                var index = lineStart
+                while (index < bytes.size) {
+                    if (bytes[index] == NEWLINE_BYTE) {
+                        newlineIndex = index
+                        break
+                    }
+                    index++
+                }
+                val lineEnd = if (newlineIndex >= 0) newlineIndex else bytes.size
+                val lineEndWithNewline = if (newlineIndex >= 0) newlineIndex + 1 else bytes.size
+                if (isBlankLine(bytes, lineStart, lineEnd)) {
+                    if (!tailBroken) candidateEnd = lineEndWithNewline
+                } else {
+                    hasNonBlank = true
+                    val valid = isJsonObjectLine(bytes, lineStart, lineEnd)
+                    lastNonBlankValid = valid
+                    if (valid) {
+                        candidateEnd = lineEndWithNewline
+                        tailBroken = false
+                    } else {
+                        tailBroken = true
+                    }
+                }
+                if (newlineIndex < 0) break
+                lineStart = newlineIndex + 1
+            }
+            if (!hasNonBlank) return bytes
+            if (lastNonBlankValid) {
+                if (bytes[bytes.size - 1] != NEWLINE_BYTE) {
+                    fs.appendingSink(file).buffer().use { sink -> sink.writeByte(NEWLINE_BYTE.toInt()) }
+                }
+                return bytes
+            }
+            if (candidateEnd == 0) return bytes
+            val corruptTail = bytes.copyOfRange(candidateEnd, bytes.size)
+            writeCorruptBackup(file, fs, corruptTail)
+            val repaired = bytes.copyOf(candidateEnd)
+            fs.write(file) { write(repaired) }
+            return repaired
+        }
+
+        private fun writeCorruptBackup(file: Path, fs: FileSystem, corruptTail: ByteArray) {
+            val parent = file.parent ?: return
+            val backup = parent / (file.name + CORRUPT_FILE_SUFFIX)
+            if (!fs.exists(parent)) fs.createDirectories(parent)
+            val backupSize = if (fs.exists(backup)) fs.metadataOrNull(backup)?.size ?: 0L else 0L
+            fs.appendingSink(backup).buffer().use { sink ->
+                if (backupSize > 0L) sink.writeUtf8("\n")
+                val timestamp = isoTimestamp(Clock.System.now().toEpochMilliseconds())
+                sink.writeUtf8(
+                    "===== corrupt session tail from ${file} at $timestamp (${corruptTail.size} bytes) =====\n",
+                )
+                sink.write(corruptTail)
+                if (corruptTail.isEmpty() || corruptTail[corruptTail.size - 1] != NEWLINE_BYTE) {
+                    sink.writeByte(NEWLINE_BYTE.toInt())
+                }
+            }
+        }
+
+        private fun isBlankLine(bytes: ByteArray, start: Int, end: Int): Boolean {
+            for (index in start until end) {
+                val byte = bytes[index].toInt()
+                if (byte != SPACE_BYTE && byte != TAB_BYTE && byte != CARRIAGE_RETURN_BYTE) return false
+            }
+            return true
+        }
+
+        private fun isJsonObjectLine(bytes: ByteArray, start: Int, end: Int): Boolean {
+            if (end <= start) return false
+            val text = bytes.copyOfRange(start, end).decodeToString().trim()
+            if (text.isEmpty()) return false
+            val element = runCatching { sessionJson.parseToJsonElement(text) }.getOrNull()
+            return element is JsonObject
         }
 
         private fun readSessionHeader(file: Path, fs: FileSystem): SessionHeader? {
@@ -1234,6 +1348,16 @@ private fun StringBuilder.appendPadded(value: Int, width: Int) {
 }
 
 private const val ROOT_BRANCH_ID = "root"
+
+private const val CORRUPT_FILE_SUFFIX = ".corrupt"
+
+private const val NEWLINE_BYTE = '\n'.code.toByte()
+
+private const val CARRIAGE_RETURN_BYTE = '\r'.code
+
+private const val SPACE_BYTE = ' '.code
+
+private const val TAB_BYTE = '\t'.code
 
 private const val ID_COLLISION_ATTEMPTS = 100
 
