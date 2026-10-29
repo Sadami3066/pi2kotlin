@@ -1,7 +1,9 @@
 package dev.pi.coding.session
 
 import dev.pi.agent.Agent
+import dev.pi.agent.AgentContext
 import dev.pi.agent.AgentEvent
+import dev.pi.agent.AgentLoopTurnUpdate
 import dev.pi.agent.AgentMessage
 import dev.pi.agent.AgentTool
 import dev.pi.agent.StandardAgentMessage
@@ -25,14 +27,16 @@ import dev.pi.ai.StreamOptions
 import dev.pi.ai.SystemMessage
 import dev.pi.ai.TextContent
 import dev.pi.ai.UserMessage
+import dev.pi.ai.platform.PlatformAtomicBoolean
 import dev.pi.ai.platform.platformCurrentTimeMillis
 import dev.pi.ai.utils.Retry
 import dev.pi.ai.utils.isContextOverflow
 import dev.pi.coding.compaction.CompactionResult
 import dev.pi.coding.compaction.Summarize
 import dev.pi.coding.compaction.SummarizeRequest
+import dev.pi.coding.compaction.buildSessionProjection
 import dev.pi.coding.compaction.compact
-import dev.pi.coding.compaction.estimateMessagesTokens
+import dev.pi.coding.compaction.estimateProjectedContextTokens
 import dev.pi.coding.compaction.prepareCompaction
 import dev.pi.coding.compaction.shouldCompact
 import dev.pi.coding.models.ModelRuntime
@@ -146,6 +150,19 @@ class AgentSession internal constructor(
     private var operationJob: Job? = null
     internal var mcpStatusProvider: (() -> List<dev.pi.coding.mcp.McpServerStatus>)? = null
     private var mcpManager: dev.pi.coding.mcp.McpManager? = null
+    private val compactingBetweenTurns = PlatformAtomicBoolean(false)
+
+    init {
+        val prepareNextTurn = agent.prepareNextTurn
+        agent.prepareNextTurn = { signal ->
+            val update = prepareNextTurn?.invoke(signal)
+            if (signal == null) {
+                update
+            } else {
+                maybeCompactBetweenTurns(signal) ?: update
+            }
+        }
+    }
 
     val mcp: dev.pi.coding.mcp.McpManager
         get() = mcpManager ?: throw IllegalStateException("MCP is not enabled for this session")
@@ -262,10 +279,28 @@ class AgentSession internal constructor(
     private suspend fun maybeCompactBeforePrompt(signal: RunSignal) {
         val compactionSettings = this.settings.getCompactionSettings()
         if (!compactionSettings.enabled) return
-        val messages = agent.state.messages.mapNotNull { it.asLlmMessage() }
-        val tokens = estimateMessagesTokens(messages)
+        val branch = sessionManager.getBranch()
+        val tokens = estimateProjectedContextTokens(buildSessionProjection(branch), branch).tokens
         if (!shouldCompact(tokens, agent.state.model.contextWindow, compactionSettings)) return
         compactInternal(null, signal)
+    }
+
+    private suspend fun maybeCompactBetweenTurns(signal: RunSignal): AgentLoopTurnUpdate? {
+        val compactionSettings = settings.getCompactionSettings()
+        if (!compactionSettings.enabled || signal.isAborted) return null
+        if (!compactingBetweenTurns.compareAndSet(false, true)) return null
+        try {
+            val branch = sessionManager.getBranch()
+            val tokens = estimateProjectedContextTokens(buildSessionProjection(branch), branch).tokens
+            if (!shouldCompact(tokens, agent.state.model.contextWindow, compactionSettings)) return null
+            if (compactInternal(null, signal) == null) return null
+            if (signal.isAborted) return null
+            return AgentLoopTurnUpdate(
+                context = AgentContext(agent.state.messages.toList(), agent.state.tools.toList()),
+            )
+        } finally {
+            compactingBetweenTurns.set(false)
+        }
     }
 
     private suspend fun applyCompaction(result: CompactionResult) {
