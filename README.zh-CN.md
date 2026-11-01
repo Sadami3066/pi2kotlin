@@ -6,7 +6,7 @@
 
 [English](README.md)
 
-状态：**0.2.2 alpha**。可编译、可发布 Android AAR 与 JVM JAR；JVM 测试 1,000+、Android host 测试数百；1.0 前 API 仍可能调整。
+状态：**0.3.0 alpha**。可编译、可发布 Android AAR 与 JVM JAR；JVM 测试 1,000+、Android host 测试数百；1.0 前 API 仍可能调整。
 
 ## 模块
 
@@ -15,7 +15,7 @@
 | `pi-ai` | `packages/ai` | 统一 LLM API：10 种 chat API、图片生成/分类器 API、42 个内置 provider、模型目录、认证（API key + 9 个 OAuth 流程）、流式事件、重试、usage/cost |
 | `pi-agent` | `packages/agent` | Agent 运行时：事件生命周期、工具执行（串行/并行）、hooks、steering/follow-up 队列、proxy |
 | `pi-mcp` | `packages/mcp`（子集） | MCP 客户端：Streamable HTTP + stdio（JVM）、工具/资源/提示词、OAuth 2.1、deferred 工具经 `tool_search` 加载 |
-| `pi-coding-agent` | `packages/coding-agent` 的 core/SDK 层 | 会话（pi 兼容 JSONL）、设置、模型解析、内置工具、系统提示词与资源、压缩，以及 `AgentSession` / `createAgentSession` 门面 |
+| `pi-coding-agent` | `packages/coding-agent` 的 core/SDK 层 | 会话（pi 兼容 JSONL）、设置、模型解析、内置工具、系统提示词与资源、压缩、按模型 `inputLimits` 规范化输入与工具结果图片，以及 `AgentSession` / `createAgentSession` 门面 |
 
 依赖方向：`pi-coding-agent` → `pi-agent` → `pi-ai`，以及 `pi-coding-agent` → `pi-mcp` → `pi-ai`。
 
@@ -48,10 +48,10 @@ repositories {
 
 ```kotlin
 // JVM
-implementation("dev.pi:pi-coding-agent:0.2.2")
+implementation("dev.pi:pi-coding-agent:0.3.0")
 
 // Android
-implementation("dev.pi:pi-coding-agent-android:0.2.2")
+implementation("dev.pi:pi-coding-agent-android:0.3.0")
 ```
 
 Android 工程还需要 `android.useAndroidX=true`。
@@ -159,8 +159,8 @@ Android demo 位于 `examples/android-demo`（独立 Gradle 工程），内置�
 ./gradlew build                           # 编译全部 target 并跑测试
 ./gradlew :pi-ai:jvmTest                  # 只跑 JVM 快速测试
 ./gradlew publishToMavenLocal             # 发布 dev.pi:* 到本地
-node scripts/verify-release.mjs 0.2.2     # 校验发布产物（Java 17 字节码/AAR/POM）
-./scripts/release-local.sh 0.2.2          # clean build + 测试 + 本地发布 + demo + 校验和
+node scripts/verify-release.mjs 0.3.0     # 校验发布产物（Java 17 字节码/AAR/POM）
+./scripts/release-local.sh 0.3.0          # clean build + 测试 + 本地发布 + demo + 校验和
 ```
 
 低内存机器用 `./scripts/gw.sh <tasks>` 替代 `./gradlew`（串行化构建）。
@@ -173,7 +173,6 @@ node scripts/verify-release.mjs 0.2.2     # 校验发布产物（Java 17 字节�
 - OpenAI Codex 传输仅 SSE（WebSocket/zstd 未实现）
 - Amazon Bedrock 凭据仅支持环境变量或 bearer token（无 profile/IMDS/STS 链）
 - Radius 动态模型目录只有占位接口，支持静态 gateway URL
-- 图片不做缩放/格式转换
 - JSON Schema 校验覆盖常用约束关键字与本地 `$ref`/`$defs`；`format` 为子集
 - 未实现：codemode 沙箱、虚拟模型、deferred responses、telemetry
 - Android 仅支持 HTTP MCP server（无 stdio 子进程）；Android OAuth 需宿主提供浏览器回调；项目 `.pi/mcp.json` 不能新增 server（只能覆盖全局配置）

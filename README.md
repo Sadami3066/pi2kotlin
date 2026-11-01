@@ -6,7 +6,7 @@ A Kotlin Multiplatform SDK for building AI agent apps on **Android and the JVM**
 
 [中文文档](README.zh-CN.md)
 
-Status: **0.2.2 alpha**. The library builds, ships Android AARs and JVM JARs, and is covered by 1,000+ JVM tests plus Android host tests. API shape may still change before 1.0.
+Status: **0.3.0 alpha**. The library builds, ships Android AARs and JVM JARs, and is covered by 1,000+ JVM tests plus Android host tests. API shape may still change before 1.0.
 
 ## Modules
 
@@ -15,7 +15,7 @@ Status: **0.2.2 alpha**. The library builds, ships Android AARs and JVM JARs, an
 | `pi-ai` | `packages/ai` | Unified LLM API: 10 chat APIs, image generation and classifier APIs, 42 built-in providers, model catalog, auth (API key + 9 OAuth flows), streaming events, retries, usage/cost |
 | `pi-agent` | `packages/agent` | Agent runtime: event lifecycle, tool execution (serial and parallel), hooks, steering/follow-up queues, proxy transport |
 | `pi-mcp` | `packages/mcp` (subset) | MCP client: Streamable HTTP + stdio (JVM), tools/resources/prompts, OAuth 2.1, deferred tools via `tool_search` |
-| `pi-coding-agent` | `packages/coding-agent` (core/SDK layer) | Sessions (pi-compatible JSONL), settings, model resolution, built-in tools, system prompt and resources, compaction, and the `AgentSession` / `createAgentSession` facade |
+| `pi-coding-agent` | `packages/coding-agent` (core/SDK layer) | Sessions (pi-compatible JSONL), settings, model resolution, built-in tools, system prompt and resources, compaction, prompt/tool-result image normalization to model `inputLimits`, and the `AgentSession` / `createAgentSession` facade |
 
 Dependency direction: `pi-coding-agent` → `pi-agent` → `pi-ai`, and `pi-coding-agent` → `pi-mcp` → `pi-ai`.
 
@@ -48,10 +48,10 @@ Then depend on the variant you need:
 
 ```kotlin
 // JVM
-implementation("dev.pi:pi-coding-agent:0.2.2")
+implementation("dev.pi:pi-coding-agent:0.3.0")
 
 // Android
-implementation("dev.pi:pi-coding-agent-android:0.2.2")
+implementation("dev.pi:pi-coding-agent-android:0.3.0")
 ```
 
 Android apps also need `android.useAndroidX=true`.
@@ -159,8 +159,8 @@ The Android demo lives in `examples/android-demo` (standalone Gradle build) and 
 ./gradlew build                           # compile all targets and run all tests
 ./gradlew :pi-ai:jvmTest                  # fast JVM-only tests
 ./gradlew publishToMavenLocal             # publish dev.pi:* artifacts locally
-node scripts/verify-release.mjs 0.2.2     # verify published artifacts (Java 17 bytecode, AARs, POMs)
-./scripts/release-local.sh 0.2.2          # clean build + tests + local publish + demos + checksums
+node scripts/verify-release.mjs 0.3.0     # verify published artifacts (Java 17 bytecode, AARs, POMs)
+./scripts/release-local.sh 0.3.0          # clean build + tests + local publish + demos + checksums
 ```
 
 On low-memory machines use `./scripts/gw.sh <tasks>` instead of `./gradlew` to serialize Gradle runs.
@@ -173,7 +173,6 @@ On low-memory machines use `./scripts/gw.sh <tasks>` instead of `./gradlew` to s
 - OpenAI Codex transport is SSE only (WebSocket/zstd not implemented).
 - Amazon Bedrock credentials come from environment variables or a bearer token (no profile/IMDS/STS chain).
 - Radius dynamic model catalog is stubbed; only the static gateway URL is supported.
-- Images are passed through without resizing or format conversion.
 - JSON Schema validation covers common constraint keywords plus local `$ref`/`$defs`; `format` supports a subset.
 - Not implemented: codemode sandbox, virtual models, deferred responses, telemetry.
 - Android supports HTTP MCP servers only (no stdio subprocesses); Android OAuth needs a host-provided browser callback, and project `.pi/mcp.json` cannot define new servers (only override the global config).
