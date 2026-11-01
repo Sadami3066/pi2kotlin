@@ -45,6 +45,7 @@ import dev.pi.coding.compaction.shouldCompact
 import dev.pi.coding.images.IMAGE_CONVERSION_FAILED_MESSAGE
 import dev.pi.coding.images.ProcessImageResult
 import dev.pi.coding.images.decodeBase64
+import dev.pi.coding.images.limitRequestImages
 import dev.pi.coding.images.normalizeToolResultImages
 import dev.pi.coding.images.processImage
 import dev.pi.coding.models.ModelRuntime
@@ -174,6 +175,14 @@ class AgentSession internal constructor(
         agent.afterToolCall = { context, signal ->
             val hookResult = afterToolCall?.invoke(context, signal)
             normalizeToolResultContent(context, hookResult)
+        }
+        val convertToLlm = agent.convertToLlm
+        agent.convertToLlm = { messages ->
+            limitRequestImages(
+                convertToLlm(messages),
+                settings.getImageRequestMaxImages(),
+                settings.getImageRequestMaxBytes(),
+            )
         }
     }
 

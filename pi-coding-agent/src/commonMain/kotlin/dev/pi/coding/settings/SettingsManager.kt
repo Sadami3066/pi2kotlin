@@ -122,6 +122,14 @@ class SettingsManager(
 
     fun getImageAutoResize(): Boolean = getSettings().images?.autoResize ?: SettingsDefaults.IMAGES_AUTO_RESIZE
 
+    fun getImageRequestMaxImages(): Int =
+        (getSettings().images?.requestMaxImages ?: SettingsDefaults.IMAGES_REQUEST_MAX_IMAGES)
+            .coerceIn(1L, Int.MAX_VALUE.toLong())
+            .toInt()
+
+    fun getImageRequestMaxBytes(): Long =
+        getSettings().images?.requestMaxBytes ?: SettingsDefaults.IMAGES_REQUEST_MAX_BYTES
+
     fun getShellPath(): String? = getSettings().shellPath
 
     fun getExtensionPaths(): List<String> = getSettings().extensions.orEmpty()

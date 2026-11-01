@@ -54,6 +54,8 @@ class SettingsManagerTest {
         assertEquals(BranchSummarySettings(), manager.getBranchSummarySettings())
         assertEquals(ProviderRetrySettings(), manager.getProviderRetrySettings())
         assertEquals(true, manager.getImageAutoResize())
+        assertEquals(20, manager.getImageRequestMaxImages())
+        assertEquals(20L * 1024L * 1024L, manager.getImageRequestMaxBytes())
         assertNull(manager.getShellPath())
         assertEquals("auto", manager.getTransport())
         assertEquals("ask", manager.getDefaultProjectTrust())
@@ -90,6 +92,15 @@ class SettingsManagerTest {
         assertEquals("/bin/zsh", manager.getShellPath())
         assertEquals(listOf("a", "b"), manager.getEnabledModels())
         assertEquals(false, manager.getImageAutoResize())
+    }
+
+    @Test
+    fun readsImageRequestBudgetSettings() = runTest {
+        val fs = newFileSystem()
+        fs.putText(GLOBAL, """{ "images": { "requestMaxImages": 3, "requestMaxBytes": 1024 } }""")
+        val manager = reloaded(fs)
+        assertEquals(3, manager.getImageRequestMaxImages())
+        assertEquals(1024L, manager.getImageRequestMaxBytes())
     }
 
     @Test

@@ -33,6 +33,8 @@ object SettingsDefaults {
     const val TERMINAL_SHOW_TERMINAL_PROGRESS = false
     const val IMAGES_AUTO_RESIZE = true
     const val IMAGES_BLOCK_IMAGES = false
+    const val IMAGES_REQUEST_MAX_IMAGES = 20L
+    const val IMAGES_REQUEST_MAX_BYTES = 20L * 1024L * 1024L
     const val DOUBLE_ESCAPE_ACTION = "tree"
     const val TREE_FILTER_MODE = "default"
     const val EDITOR_PADDING_X = 0L
@@ -126,6 +128,8 @@ data class TerminalSettings(
 data class ImageSettings(
     val autoResize: Boolean = SettingsDefaults.IMAGES_AUTO_RESIZE,
     val blockImages: Boolean = SettingsDefaults.IMAGES_BLOCK_IMAGES,
+    val requestMaxImages: Long = SettingsDefaults.IMAGES_REQUEST_MAX_IMAGES,
+    val requestMaxBytes: Long = SettingsDefaults.IMAGES_REQUEST_MAX_BYTES,
 )
 
 data class ThinkingBudgetsSettings(
@@ -415,6 +419,8 @@ internal object PiSettingsCodec {
         return ImageSettings(
             autoResize = reader.boolean("autoResize") ?: SettingsDefaults.IMAGES_AUTO_RESIZE,
             blockImages = reader.boolean("blockImages") ?: SettingsDefaults.IMAGES_BLOCK_IMAGES,
+            requestMaxImages = reader.long("requestMaxImages") ?: SettingsDefaults.IMAGES_REQUEST_MAX_IMAGES,
+            requestMaxBytes = reader.long("requestMaxBytes") ?: SettingsDefaults.IMAGES_REQUEST_MAX_BYTES,
         )
     }
 
