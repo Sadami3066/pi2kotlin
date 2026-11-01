@@ -6,6 +6,8 @@ import dev.pi.agent.AgentEvent
 import dev.pi.agent.AgentLoopTurnUpdate
 import dev.pi.agent.AgentMessage
 import dev.pi.agent.AgentTool
+import dev.pi.agent.AfterToolCallContext
+import dev.pi.agent.AfterToolCallResult
 import dev.pi.agent.StandardAgentMessage
 import dev.pi.agent.ThinkingLevel
 import dev.pi.agent.asAgentMessage
@@ -18,6 +20,7 @@ import dev.pi.ai.Content
 import dev.pi.ai.ImageContent
 import dev.pi.ai.Message
 import dev.pi.ai.Model
+import dev.pi.ai.ModelImageResizeOptions
 import dev.pi.ai.PlainTextContent
 import dev.pi.ai.RequestAbortedException
 import dev.pi.ai.RunSignal
@@ -39,6 +42,11 @@ import dev.pi.coding.compaction.compact
 import dev.pi.coding.compaction.estimateProjectedContextTokens
 import dev.pi.coding.compaction.prepareCompaction
 import dev.pi.coding.compaction.shouldCompact
+import dev.pi.coding.images.IMAGE_CONVERSION_FAILED_MESSAGE
+import dev.pi.coding.images.ProcessImageResult
+import dev.pi.coding.images.decodeBase64
+import dev.pi.coding.images.normalizeToolResultImages
+import dev.pi.coding.images.processImage
 import dev.pi.coding.models.ModelRuntime
 import dev.pi.coding.platformWorkDispatcher
 import dev.pi.coding.prompt.LoadedResources
@@ -161,6 +169,11 @@ class AgentSession internal constructor(
             } else {
                 maybeCompactBetweenTurns(signal) ?: update
             }
+        }
+        val afterToolCall = agent.afterToolCall
+        agent.afterToolCall = { context, signal ->
+            val hookResult = afterToolCall?.invoke(context, signal)
+            normalizeToolResultContent(context, hookResult)
         }
     }
 
@@ -371,13 +384,16 @@ class AgentSession internal constructor(
     suspend fun prompt(text: String, images: List<ImageContent>? = null, behavior: QueueBehavior? = null) {
         check(!closed) { "Session is disposed" }
         if (activeOperation != null) {
-            val message = StandardAgentMessage(buildUserMessage(text, images))
+            if (behavior == null) {
+                throw IllegalStateException(
+                    "Session is busy; pass QueueBehavior.Steer or QueueBehavior.FollowUp, or call abort()",
+                )
+            }
+            val normalized = normalizePrompt(text, images)
+            val message = StandardAgentMessage(buildUserMessage(normalized.text, normalized.images))
             when (behavior) {
                 QueueBehavior.Steer -> agent.steer(message)
                 QueueBehavior.FollowUp -> agent.followUp(message)
-                null -> throw IllegalStateException(
-                    "Session is busy; pass QueueBehavior.Steer or QueueBehavior.FollowUp, or call abort()",
-                )
             }
             return
         }
@@ -397,7 +413,8 @@ class AgentSession internal constructor(
         signal.throwIfAborted()
         maybeCompactBeforePrompt(signal)
         signal.throwIfAborted()
-        agent.prompt(transformed, input.images)
+        val normalized = normalizePrompt(transformed, input.images)
+        agent.prompt(normalized.text, normalized.images)
         runRetryLoop(signal)
     }
 
@@ -412,6 +429,56 @@ class AgentSession internal constructor(
 
             is InputDecision.Continue -> InputRequest(decision.text, decision.images ?: images)
         }
+    }
+
+    private suspend fun normalizePrompt(text: String, images: List<ImageContent>?): NormalizedPrompt {
+        if (images.isNullOrEmpty()) return NormalizedPrompt(text, images)
+        return withContext(platformWorkDispatcher()) {
+            val autoResizeImages = settings.getImageAutoResize()
+            val resizeOptions = imageResizeOptions()
+            val normalizedImages = mutableListOf<ImageContent>()
+            val hints = mutableListOf<String>()
+            for (image in images) {
+                val bytes = decodeBase64(image.data)
+                if (bytes == null) {
+                    hints.add(IMAGE_CONVERSION_FAILED_MESSAGE)
+                    continue
+                }
+                when (val processed = processImage(bytes, image.mimeType, autoResizeImages, resizeOptions)) {
+                    is ProcessImageResult.Success -> {
+                        normalizedImages.add(ImageContent(data = processed.data, mimeType = processed.mimeType))
+                        hints.addAll(processed.hints)
+                    }
+
+                    is ProcessImageResult.Failure -> hints.add(processed.message)
+                }
+            }
+            val promptText = if (hints.isEmpty()) text else "$text\n\n${hints.joinToString("\n")}"
+            NormalizedPrompt(promptText, normalizedImages.ifEmpty { null })
+        }
+    }
+
+    private fun imageResizeOptions(): ModelImageResizeOptions? = agent.state.model.inputLimits?.images?.resize
+
+    private suspend fun normalizeToolResultContent(
+        context: AfterToolCallContext,
+        hookResult: AfterToolCallResult?,
+    ): AfterToolCallResult? {
+        val content = hookResult?.content ?: context.result.content
+        val normalizedContent = normalizeToolResultImages(
+            content = content,
+            autoResizeImages = settings.getImageAutoResize(),
+            resizeOptions = imageResizeOptions(),
+        )
+        if (hookResult == null && normalizedContent === content) return null
+        return AfterToolCallResult(
+            content = normalizedContent,
+            details = hookResult?.details,
+            structuredContent = if (hookResult != null) hookResult.structuredContent else context.result.structuredContent,
+            isError = hookResult?.isError,
+            usage = hookResult?.usage,
+            terminate = hookResult?.terminate,
+        )
     }
 
     private suspend fun runRetryLoop(signal: RunSignal) {
@@ -496,7 +563,8 @@ class AgentSession internal constructor(
 
     suspend fun steer(text: String, images: List<ImageContent>? = null) {
         if (agent.state.isStreaming) {
-            agent.steer(StandardAgentMessage(buildUserMessage(text, images)))
+            val normalized = normalizePrompt(text, images)
+            agent.steer(StandardAgentMessage(buildUserMessage(normalized.text, normalized.images)))
         } else {
             prompt(text, images)
         }
@@ -504,7 +572,8 @@ class AgentSession internal constructor(
 
     suspend fun followUp(text: String, images: List<ImageContent>? = null) {
         if (agent.state.isStreaming) {
-            agent.followUp(StandardAgentMessage(buildUserMessage(text, images)))
+            val normalized = normalizePrompt(text, images)
+            agent.followUp(StandardAgentMessage(buildUserMessage(normalized.text, normalized.images)))
         } else {
             prompt(text, images)
         }
@@ -709,3 +778,5 @@ internal fun buildUserMessage(text: String, images: List<ImageContent>?): UserMe
     }
     return UserMessage(content = content, timestamp = platformCurrentTimeMillis())
 }
+
+private class NormalizedPrompt(val text: String, val images: List<ImageContent>?)
