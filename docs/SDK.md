@@ -6,11 +6,11 @@
 
 ```kotlin
 dependencies {
-    implementation("dev.pi:pi-coding-agent:0.3.0")
+    implementation("dev.pi:pi-coding-agent:0.4.0")
 }
 ```
 
-Android 使用 `dev.pi:pi-coding-agent-android:0.3.0`。产物暂未发布到 Maven Central，先执行 `./gradlew publishToMavenLocal`。
+Android 使用 `dev.pi:pi-coding-agent-android:0.4.0`。产物暂未发布到 Maven Central，先执行 `./gradlew publishToMavenLocal`。
 
 模块：`pi-ai`（LLM 统一层）→ `pi-agent`（agent 循环）→ `pi-coding-agent`（会话/工具/提示词/SDK 门面）。targets：Android（minSdk 26）+ JVM（Java 17 字节码）。
 
@@ -139,5 +139,5 @@ CodingHooks(
 
 - 不包含 CLI/交互式 TUI；UI 由宿主应用渲染事件流。
 - 不支持加载 pi 的 TypeScript 扩展；扩展点以 Kotlin `CodingHooks` + 自定义 `CodingTool` 提供。
-- 图片工具不做自动缩放/格式转换（移动端可用宿主图像库预处理）。
+- 图片按模型 `inputLimits` 规范化（尺寸/编码/大小）；请求体只保留预算内最近的内联图（默认 20 张 / 20MiB base64，可在 `settings.json` 的 `images.requestMaxImages` / `requestMaxBytes` 调整），更旧的图替换为文本占位，会话历史与 JSONL 仍保留原图。
 - `grep`/`find` 为纯 Kotlin 实现，不依赖 rg/fd。
