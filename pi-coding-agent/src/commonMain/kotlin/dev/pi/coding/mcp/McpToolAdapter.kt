@@ -47,6 +47,13 @@ class McpToolAdapter(
     val client: McpClient,
     val options: McpToolAdapterOptions = McpToolAdapterOptions(),
 ) {
+    suspend fun execute(
+        tool: McpTool,
+        args: JsonObject,
+        signal: RunSignal?,
+        onUpdate: (suspend (AgentToolResult) -> Unit)? = null,
+    ): AgentToolResult = executeTool(tool, args, signal, onUpdate)
+
     fun adapt(tool: McpTool, existingNames: Set<String> = emptySet()): CodingTool {
         val exposedName = mcpToolName(serverName, tool.name, existingNames)
         val fallback = tool.title?.takeIf { it.isNotBlank() } ?: "MCP tool ${tool.name} from server $serverName"

@@ -109,6 +109,7 @@ class McpSessionScenarioTest {
         exposure: McpExposure,
         transport: FakeMcpTransport,
         responses: List<FauxResponseStep>,
+        autoEnableToolSearch: Boolean = false,
     ): Pair<dev.pi.coding.session.AgentSession, FauxProviderHandle> {
         val fs = ScenarioSupport.fileSystem()
         ScenarioSupport.writeSettings(fs, """{"projectTrusted":true}""")
@@ -124,6 +125,7 @@ class McpSessionScenarioTest {
                 providers = listOf(faux.provider),
                 mcp = McpOptions(
                     loadConfig = false,
+                    autoEnableToolSearch = autoEnableToolSearch,
                     servers = mapOf(
                         "demo" to McpServerConfig.Http(url = "https://mcp.test/mcp", exposure = exposure),
                     ),
@@ -173,7 +175,7 @@ class McpSessionScenarioTest {
                 ),
             ),
             FauxResponseStep.Fixed(fauxAssistantMessage("done")),
-        ))
+        ), autoEnableToolSearch = true)
         try {
             assertTrue(session.activeToolNames.contains("tool_search"))
             assertFalse(session.activeToolNames.contains("mcp__demo__echo"))
@@ -188,6 +190,25 @@ class McpSessionScenarioTest {
             }
             assertTrue(texts.any { it.contains("echoed:abc") }, texts.toString())
             assertEquals(3, faux.state.callCount)
+        } finally {
+            session.close()
+        }
+    }
+
+    @Test
+    fun callDeferredToolExecutesWithoutLoadingTools() = runBlocking {
+        val transport = FakeMcpTransport()
+        val (session, _) = createSession(McpExposure.Deferred, transport, emptyList())
+        try {
+            assertFalse(session.activeToolNames.contains("mcp__demo__echo"))
+            val result = session.mcp.callDeferredTool(
+                "mcp__demo__echo",
+                buildJsonObject { put("value", "abc") },
+            )
+            val text = result?.content?.filterIsInstance<dev.pi.ai.TextContent>()?.joinToString("") { it.text }
+            assertTrue(text?.contains("echoed:abc") == true, text)
+            assertFalse(session.activeToolNames.contains("mcp__demo__echo"))
+            assertTrue(session.mcp.callDeferredTool("missing", JsonObject(emptyMap())) == null)
         } finally {
             session.close()
         }

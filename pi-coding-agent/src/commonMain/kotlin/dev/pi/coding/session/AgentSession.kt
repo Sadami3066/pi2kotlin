@@ -579,6 +579,11 @@ class AgentSession internal constructor(
         }
     }
 
+    fun removeQueuedInput(text: String, behavior: QueueBehavior): Boolean = when (behavior) {
+        QueueBehavior.Steer -> agent.removeSteering(text)
+        QueueBehavior.FollowUp -> agent.removeFollowUp(text)
+    }
+
     suspend fun followUp(text: String, images: List<ImageContent>? = null) {
         if (agent.state.isStreaming) {
             val normalized = normalizePrompt(text, images)

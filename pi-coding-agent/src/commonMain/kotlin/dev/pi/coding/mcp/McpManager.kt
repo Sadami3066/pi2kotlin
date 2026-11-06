@@ -1,5 +1,7 @@
 package dev.pi.coding.mcp
 
+import dev.pi.agent.AgentToolResult
+import dev.pi.ai.RunSignal
 import dev.pi.coding.tools.CodingTool
 import dev.pi.mcp.McpClient
 import dev.pi.mcp.McpClientOptions
@@ -214,6 +216,20 @@ class McpManager internal constructor(
     }
 
     fun deferredCatalog(): List<McpDeferredTool> = connections.values.flatMap { it.deferredCatalog() }
+
+    suspend fun callDeferredTool(
+        name: String,
+        args: JsonObject,
+        signal: RunSignal? = null,
+        onUpdate: (suspend (AgentToolResult) -> Unit)? = null,
+    ): AgentToolResult? {
+        for (connection in connections.values) {
+            if (!connection.config.enabled) continue
+            val result = connection.executeDeferred(name, args, signal, onUpdate)
+            if (result != null) return result
+        }
+        return null
+    }
 
     suspend fun loadDeferredTools(names: List<String>): List<CodingTool> {
         if (names.isEmpty()) return emptyList()
@@ -456,6 +472,19 @@ private class McpServerConnection(
             }
         }
         return AdaptedDeferred(tools)
+    }
+
+    suspend fun executeDeferred(
+        exposedName: String,
+        args: JsonObject,
+        signal: RunSignal?,
+        onUpdate: (suspend (AgentToolResult) -> Unit)?,
+    ): AgentToolResult? {
+        if (exposedName !in deferred) return null
+        val activeClient = client ?: return null
+        val raw = rawTools.firstOrNull { tool -> mcpToolExposedName(name, tool.name) == exposedName }
+            ?: return null
+        return McpToolAdapter(name, activeClient, adapterOptions).execute(raw, args, signal, onUpdate)
     }
 
     suspend fun connect() = mutex.withLock {

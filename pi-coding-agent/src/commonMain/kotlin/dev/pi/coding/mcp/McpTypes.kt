@@ -14,7 +14,7 @@ data class McpOptions(
     val requestTimeoutMs: Long = 60_000,
     val maxOutputBytes: Int = 20 * 1024,
     val outputDirectory: Path? = null,
-    val autoEnableToolSearch: Boolean = true,
+    val autoEnableToolSearch: Boolean = false,
     val transportFactory: McpTransportFactory? = null,
     val samplingEnabled: Boolean = true,
     val samplingMaxTokens: Long = 4096,

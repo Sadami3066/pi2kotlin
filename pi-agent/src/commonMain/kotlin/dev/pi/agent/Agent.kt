@@ -8,6 +8,7 @@ import dev.pi.ai.Content
 import dev.pi.ai.ImageContent
 import dev.pi.ai.Message
 import dev.pi.ai.PayloadHook
+import dev.pi.ai.PlainTextContent
 import dev.pi.ai.ProviderStreamEventHook
 import dev.pi.ai.ResponseHook
 import dev.pi.ai.RunSignal
@@ -115,6 +116,10 @@ class Agent(options: AgentOptions = AgentOptions()) {
     fun followUp(message: AgentMessage) {
         followUpQueue.enqueue(message)
     }
+
+    fun removeSteering(text: String): Boolean = steeringQueue.remove { message -> queuedUserText(message) == text }
+
+    fun removeFollowUp(text: String): Boolean = followUpQueue.remove { message -> queuedUserText(message) == text }
 
     fun clearSteeringQueue() {
         steeringQueue.clear()
@@ -405,9 +410,28 @@ class Agent(options: AgentOptions = AgentOptions()) {
             drained
         }
 
+        fun remove(predicate: (AgentMessage) -> Boolean): Boolean = synchronized(this) {
+            val index = messages.indexOfFirst(predicate)
+            if (index < 0) {
+                false
+            } else {
+                messages.removeAt(index)
+                true
+            }
+        }
+
         fun clear() {
             synchronized(this) { messages.clear() }
         }
+    }
+}
+
+private fun queuedUserText(message: AgentMessage): String? {
+    val user = message.asLlmMessage() as? UserMessage ?: return null
+    return when (val content = user.content) {
+        is PlainTextContent -> content.text
+        is BlockContent -> content.blocks.filterIsInstance<TextContent>().joinToString("") { it.text }
+        else -> null
     }
 }
 

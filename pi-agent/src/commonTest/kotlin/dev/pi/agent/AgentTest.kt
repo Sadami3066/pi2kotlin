@@ -484,6 +484,18 @@ class AgentTest {
     }
 
     @Test
+    fun `removes queued messages by text`() {
+        val agent = Agent(AgentOptions(streamFn = unusedStreamFunction))
+        agent.steer(userMessage("steering"))
+        agent.followUp(userMessage("follow-up"))
+        assertTrue(agent.removeSteering("missing").not())
+        assertTrue(agent.removeSteering("steering"))
+        assertEquals(listOf("follow-up"), agent.peekQueuedMessages().map { userTextOf(it) })
+        assertTrue(agent.removeFollowUp("follow-up"))
+        assertFalse(agent.hasQueuedMessages())
+    }
+
+    @Test
     fun `abort does nothing when idle`() {
         val agent = Agent(AgentOptions(streamFn = unusedStreamFunction))
         agent.abort()
