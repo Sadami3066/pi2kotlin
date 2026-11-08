@@ -83,6 +83,7 @@ data class AgentSessionOptions(
     val initialSystemPromptSections: Map<String, String> = emptyMap(),
     val projectTrusted: Boolean? = null,
     val mcp: dev.pi.coding.mcp.McpOptions = dev.pi.coding.mcp.McpOptions(),
+    val excludedSkills: Set<String> = emptySet(),
 )
 
 suspend fun createAgentSession(options: AgentSessionOptions): AgentSession {
@@ -147,7 +148,7 @@ suspend fun createAgentSession(options: AgentSessionOptions): AgentSession {
         sessionManager.appendThinkingLevelChange(thinkingLevel)
     }
 
-    val resources = ResourceLoader(paths, options.fs, settings).reload()
+    val resources = ResourceLoader(paths, options.fs, settings, options.excludedSkills).reload()
     val defaultToolNames = settings.getDefaultTools().toSet()
     val tools = options.tools ?: defaultCodingTools(
         cwd = options.cwd,

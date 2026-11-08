@@ -25,12 +25,14 @@ class ResourceLoader(
     val paths: AgentPaths,
     val fs: FileSystem,
     val settings: SettingsManager,
+    private val excludedSkills: Set<String> = emptySet(),
 ) {
     suspend fun reload(): LoadedResources = loadPromptResources(
         cwd = paths.cwd,
         agentDir = paths.agentDir,
         fs = fs,
         projectTrusted = settings.isProjectTrusted(),
+        excludedSkills = excludedSkills,
     )
 }
 
@@ -39,11 +41,12 @@ suspend fun loadPromptResources(
     agentDir: Path,
     fs: FileSystem,
     projectTrusted: Boolean,
+    excludedSkills: Set<String> = emptySet(),
 ): LoadedResources = LoadedResources(
     systemPromptOverride = loadSystemPromptOverride(cwd, agentDir, fs, projectTrusted),
     appendSystemPrompt = loadAppendSystemPrompt(cwd, agentDir, fs, projectTrusted),
     contextFiles = loadContextFiles(agentDir, cwd, fs),
-    skills = loadSkills(cwd, agentDir, fs, projectTrusted),
+    skills = loadSkills(cwd, agentDir, fs, projectTrusted).filterNot { it.name in excludedSkills },
     promptTemplates = loadPromptTemplates(cwd, agentDir, fs, projectTrusted),
 )
 

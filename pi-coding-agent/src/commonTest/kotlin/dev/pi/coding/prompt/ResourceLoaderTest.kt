@@ -124,6 +124,22 @@ class ResourceLoaderTest {
     }
 
     @Test
+    fun `excludes disabled skills`() = runTest {
+        val fs = fakeFs(
+            "/agent/skills/keep/SKILL.md" to "---\nname: keep\ndescription: Keep me.\n---\nbody",
+            "/agent/skills/drop/SKILL.md" to "---\nname: drop\ndescription: Drop me.\n---\nbody",
+        )
+        val resources = loadPromptResources(
+            cwd,
+            agentDir,
+            fs,
+            projectTrusted = false,
+            excludedSkills = setOf("drop"),
+        )
+        assertEquals(listOf("keep"), resources.skills.map { it.name })
+    }
+
+    @Test
     fun `skips skills without a description`() = runTest {
         val fs = fakeFs(
             "/agent/skills/no-desc/SKILL.md" to "---\nname: no-desc\n---\nbody",
