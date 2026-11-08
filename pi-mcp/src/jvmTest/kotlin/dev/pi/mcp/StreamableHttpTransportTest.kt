@@ -5,6 +5,8 @@ import dev.pi.ai.RunSignal
 import dev.pi.ai.http.HttpTransportException
 import dev.pi.ai.http.okHttpTransport
 import dev.pi.ai.PiJson
+import dev.pi.mcp.oauth.McpAuthProvider
+import dev.pi.mcp.oauth.McpUnauthorizedContext
 import dev.pi.mcp.protocol.JsonRpcCodec
 import dev.pi.mcp.protocol.JsonRpcId
 import dev.pi.mcp.protocol.JsonRpcMessage
@@ -61,16 +63,32 @@ class StreamableHttpTransportTest {
         requestTimeoutMs: Long? = null,
         reconnect: StreamableHttpReconnectOptions = StreamableHttpReconnectOptions(initialDelayMs = 10, maxDelayMs = 50),
         headers: Map<String, String> = emptyMap(),
+        authProvider: McpAuthProvider? = null,
     ): StreamableHttpTransport = StreamableHttpTransport(
         okHttpTransport(client),
         StreamableHttpTransportOptions(
             url = server.url("/mcp").toString(),
             headers = headers,
+            authProvider = authProvider,
             openGetStream = openGetStream,
             requestTimeoutMs = requestTimeoutMs,
             reconnect = reconnect,
         ),
     )
+
+    private class TestAuthProvider(
+        var tokenValue: String?,
+        var refreshedToken: String? = null,
+    ) : McpAuthProvider {
+        var unauthorizedCount = 0
+
+        override suspend fun token(): String? = tokenValue
+
+        override suspend fun onUnauthorized(context: McpUnauthorizedContext) {
+            unauthorizedCount += 1
+            tokenValue = refreshedToken
+        }
+    }
 
     private fun enqueueJson(server: MockWebServer, body: String, sessionId: String? = null, code: Int = 200) {
         val builder = MockResponse.Builder()
@@ -397,6 +415,88 @@ class StreamableHttpTransportTest {
             val thirdGet = next(server)
             assertEquals("evt-2", thirdGet.headers["last-event-id"])
             transport.close()
+        }
+    }
+
+    @Test
+    fun getStreamSendsAuthorizationAndRetriesAfterUnauthorized() = runBlocking<Unit> {
+        withServer { server, client ->
+            server.enqueue(MockResponse.Builder().code(202).build())
+            server.enqueue(
+                MockResponse.Builder()
+                    .code(401)
+                    .addHeader("www-authenticate", """Bearer resource_metadata="https://auth.example/meta"""")
+                    .build(),
+            )
+            enqueueSse(server, sse(notification("notifications/message")))
+            server.enqueue(MockResponse.Builder().code(405).build())
+
+            val auth = TestAuthProvider("token-1", refreshedToken = "token-2")
+            val transport = transport(server, client, openGetStream = true, authProvider = auth)
+            transport.start()
+            val messages = async { collectMessages(transport, 1) }
+            transport.send(JsonRpcNotification("notifications/initialized"))
+            assertEquals("notifications/message", assertIs<JsonRpcNotification>(messages.await().single()).method)
+            assertEquals(1, auth.unauthorizedCount)
+
+            val post = next(server)
+            assertEquals("POST", post.method)
+            assertEquals("Bearer token-1", post.headers["authorization"])
+            val rejectedGet = next(server)
+            assertEquals("GET", rejectedGet.method)
+            assertEquals("Bearer token-1", rejectedGet.headers["authorization"])
+            val retriedGet = next(server)
+            assertEquals("GET", retriedGet.method)
+            assertEquals("Bearer token-2", retriedGet.headers["authorization"])
+            transport.close()
+        }
+    }
+
+    @Test
+    fun getStreamOmitsAuthorizationWithoutToken() = runBlocking<Unit> {
+        withServer { server, client ->
+            server.enqueue(MockResponse.Builder().code(202).build())
+            enqueueSse(server, sse(notification("notifications/message")))
+            server.enqueue(MockResponse.Builder().code(405).build())
+
+            val transport = transport(
+                server,
+                client,
+                openGetStream = true,
+                authProvider = TestAuthProvider(null),
+            )
+            transport.start()
+            val messages = async { collectMessages(transport, 1) }
+            transport.send(JsonRpcNotification("notifications/initialized"))
+            messages.await()
+
+            next(server)
+            val get = next(server)
+            assertEquals("GET", get.method)
+            assertNull(get.headers["authorization"])
+            transport.close()
+        }
+    }
+
+    @Test
+    fun closeSendsDeleteWithAuthorization() = runBlocking<Unit> {
+        withServer { server, client ->
+            enqueueJson(server, response(1), sessionId = "sess-auth-close")
+            val transport = transport(server, client, authProvider = TestAuthProvider("close-token"))
+            transport.start()
+            val first = async { collectMessages(transport, 1) }
+            transport.send(JsonRpcRequest(JsonRpcId.Number(1), "first"))
+            first.await()
+            assertEquals("Bearer close-token", next(server).headers["authorization"])
+
+            server.enqueue(MockResponse.Builder().code(204).build())
+            transport.close()
+            assertNull(collectClosed(transport).error)
+
+            val delete = next(server)
+            assertEquals("DELETE", delete.method)
+            assertEquals("sess-auth-close", delete.headers["Mcp-Session-Id"])
+            assertEquals("Bearer close-token", delete.headers["authorization"])
         }
     }
 

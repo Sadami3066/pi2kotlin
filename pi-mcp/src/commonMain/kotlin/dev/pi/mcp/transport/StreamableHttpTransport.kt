@@ -263,17 +263,19 @@ class StreamableHttpTransport(
         if (started && sessionIdValue != null) {
             runCatching {
                 withTimeoutOrNull(1_000) {
-                    val response = http.execute(
-                        HttpRequest(
+                    val signal = RunSignal()
+                    val cancellation = RequestCancellation(signal) { signal.abort("transport closed") }
+                    try {
+                        val response = executeAuthorized(
                             method = "DELETE",
-                            url = options.url,
-                            headers = buildHeaders(emptyMap()),
+                            headers = emptyMap(),
                             body = null,
-                            timeoutMs = 1_000,
-                            signal = RunSignal(),
-                        ),
-                    )
-                    response.close()
+                            cancellation = cancellation,
+                        )
+                        response.close()
+                    } finally {
+                        cancellation.close()
+                    }
                 }
             }
         }
@@ -409,15 +411,11 @@ class StreamableHttpTransport(
         extraHeaders["accept"] = "text/event-stream"
         if (lastEventId != null) extraHeaders["last-event-id"] = lastEventId
         val response = try {
-            http.execute(
-                HttpRequest(
-                    method = "GET",
-                    url = options.url,
-                    headers = buildHeaders(extraHeaders),
-                    body = null,
-                    timeoutMs = options.requestTimeoutMs,
-                    signal = cancellation.signal,
-                ),
+            executeAuthorized(
+                method = "GET",
+                headers = extraHeaders,
+                body = null,
+                cancellation = cancellation,
             )
         } catch (error: Throwable) {
             cancellation.close()
