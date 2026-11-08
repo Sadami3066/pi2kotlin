@@ -17,7 +17,7 @@ internal fun buildMcpServersSection(statuses: List<McpServerStatus>): String? {
         val state = if (status.isConnected) "${status.toolCount} tools" else status.state.name.lowercase()
         lines.add("- ${status.name}: $summary ($state)")
     }
-    return lines.joinToString("\n")
+    return "<mcp_servers>\n" + lines.joinToString("\n") + "\n</mcp_servers>"
 }
 
 private fun McpServerStatus.descriptionOrInstructions(): String? = description ?: instructions ?: lastError

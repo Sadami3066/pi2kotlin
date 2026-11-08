@@ -6,5 +6,5 @@ plugins {
 
 subprojects {
     group = "dev.pi"
-    version = "0.5.0"
+    version = "0.5.1"
 }
