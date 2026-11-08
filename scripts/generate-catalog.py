@@ -24,7 +24,7 @@ body = "\n        ".join(f'"{chunk}" +' for chunk in chunks)
 if body.endswith(" +"):
     body = body[:-2]
 
-OUT.write_text(f'''package dev.pi.ai
+OUT.write_text(f'''package io.github.whywood.deepdeep.sdk.ai
 
 internal object CatalogData {{
     const val SCHEMA_VERSION: Int = {manifest["schemaVersion"]}

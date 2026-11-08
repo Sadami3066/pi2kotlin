@@ -1,6 +1,6 @@
 # pi-coding-agent SDK 契约（M5）
 
-所有新代码在 `pi-coding-agent/src/commonMain/kotlin/dev/pi/coding/`，测试在 `commonTest`。平台无关：只用 okio（`okio.FileSystem`/`Path`）、kotlinx.serialization、coroutines；禁止 `java.*`、`File`、`ProcessBuilder`、`System.getenv`。
+所有新代码在 `pi-coding-agent/src/commonMain/kotlin/io/github/whywood/deepdeep/sdk/coding/`，测试在 `commonTest`。平台无关：只用 okio（`okio.FileSystem`/`Path`）、kotlinx.serialization、coroutines；禁止 `java.*`、`File`、`ProcessBuilder`、`System.getenv`。
 
 ## 通用
 

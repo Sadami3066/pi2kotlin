@@ -11,7 +11,7 @@
 脚本依次执行：
 
 1. `./gradlew clean build`（JVM + Android target 编译与测试）
-2. `./gradlew publishToMavenLocal`（发布 `dev.pi:pi-ai-jvm`、`pi-ai-android`、`pi-agent-*`、`pi-coding-agent-*`，含 sources jar 与 POM）
+2. `./gradlew publishToMavenLocal`（发布 `io.github.whywood.deepdeep.sdk:pi-ai-jvm`、`pi-ai-android`、`pi-agent-*`、`pi-coding-agent-*`，含 sources jar 与 POM）
 3. `node scripts/verify-release.mjs 0.5.2`（校验产物完整性与字节码版本）
 4. `./gradlew :examples:jvm-demo:run`（JVM 端到端演示）
 5. 构建 Android demo APK（独立工程，消费本地发布产物）
@@ -23,11 +23,11 @@
 
 | 产物 | 路径 |
 |---|---|
-| JVM jar | `~/.m2/repository/dev/pi/<module>-jvm/0.5.2/<module>-jvm-0.5.2.jar` |
-| JVM sources | `~/.m2/repository/dev/pi/<module>-jvm/0.5.2/<module>-jvm-0.5.2-sources.jar` |
-| Gradle metadata | `~/.m2/repository/dev/pi/<module>-jvm/0.5.2/<module>-jvm-0.5.2.module` |
-| POM | `~/.m2/repository/dev/pi/<module>-jvm/0.5.2/<module>-jvm-0.5.2.pom` |
-| Android AAR | `~/.m2/repository/dev/pi/<module>-android/0.5.2/<module>-android-0.5.2.aar` |
+| JVM jar | `~/.m2/repository/io/github/whywood/deepdeep/sdk/<module>-jvm/0.5.2/<module>-jvm-0.5.2.jar` |
+| JVM sources | `~/.m2/repository/io/github/whywood/deepdeep/sdk/<module>-jvm/0.5.2/<module>-jvm-0.5.2-sources.jar` |
+| Gradle metadata | `~/.m2/repository/io/github/whywood/deepdeep/sdk/<module>-jvm/0.5.2/<module>-jvm-0.5.2.module` |
+| POM | `~/.m2/repository/io/github/whywood/deepdeep/sdk/<module>-jvm/0.5.2/<module>-jvm-0.5.2.pom` |
+| Android AAR | `~/.m2/repository/io/github/whywood/deepdeep/sdk/<module>-android/0.5.2/<module>-android-0.5.2.aar` |
 | Demo APK | `examples/android-demo/build/outputs/apk/debug/pi2kotlin-android-demo-debug.apk` |
 
 ## 校验项

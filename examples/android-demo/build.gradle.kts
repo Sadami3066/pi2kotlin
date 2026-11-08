@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace = "dev.pi.demo.android"
+    namespace = "io.github.whywood.deepdeep.sdk.demo.android"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "dev.pi.demo.android"
+        applicationId = "io.github.whywood.deepdeep.sdk.demo.android"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
@@ -29,6 +29,6 @@ kotlin {
 }
 
 dependencies {
-    implementation("dev.pi:pi-coding-agent-android:0.4.0")
+    implementation("io.github.whywood.deepdeep.sdk:pi-coding-agent-android:0.4.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 }

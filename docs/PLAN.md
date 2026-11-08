@@ -136,7 +136,7 @@ AgentMessage/AgentEvent、双层 agent loop、并行/串行工具执行、hooks�
 | P2.12 grep/find 忽略语义 | 新增 `GitIgnoreMatcher`（嵌套/取反/目录/锚定/通配）；流式 limit 早停 + RunSignal 取消 | 44 tests（工具 + matcher + 早停/取消） |
 | P2.13 校验子集 | 补齐数字/字符串/数组约束、本地 `$ref`/`$defs`、21 个 format；错误文本 TypeBox 1.3.27 golden 逐字对照 | ValidationTest 35 tests（60 golden 断言） |
 | P2.14 PKCE 随机源 | `oauthRandomBytes` 默认 `platformSecureRandomBytes`（java.security.SecureRandom） | PkceTest + PlatformAbstractionTest |
-| 平台泄漏 | 平台差异收敛 `dev.pi.ai.platform`（time/random/env/atomic）；commonMain 无 `java.*` import | grep 校验 + `PlatformAbstractionTest` |
+| 平台泄漏 | 平台差异收敛 `io.github.whywood.deepdeep.sdk.ai.platform`（time/random/env/atomic）；commonMain 无 `java.*` import | grep 校验 + `PlatformAbstractionTest` |
 | 发布不一致 | 版本统一 `0.1.0`；`jvmToolchain(17)` 产物 class major=61；双语 README、LICENSE、RELEASE 文档 | `scripts/verify-release.mjs` 32/32 PASS；`scripts/release-local.sh` 全流程通过 |
 
 测试不足项同步补齐：固定 JSONL/协议 fixture（TS 格式手写，默认可运行）、真实数据扫描改 `PI2K_REAL_SESSIONS_DIR` opt-in、SDK 组合场景 18 tests。

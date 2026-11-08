@@ -805,7 +805,7 @@ else → 并行
 
 ### 8.1 模块与包布局
 
-沿用现有 Gradle 多模块：`:pi-ai` → `:pi-agent` → `:pi-coding-agent`；`pi-agent` 依赖 `pi-ai`，新增代码全部放在 `pi-agent/src/main/kotlin/dev/pi/agent/`。`pi-agent` 不应依赖 okhttp（proxy 只依赖 `java.net.http` 或复用 pi-ai 的 HTTP 抽象；现有 `pi-ai/build.gradle.kts` 已含 okhttp，可把 proxy 的 HTTP 客户端抽到 pi-ai 或直接在 pi-agent 用 JDK HttpClient 以避免新依赖）。
+沿用现有 Gradle 多模块：`:pi-ai` → `:pi-agent` → `:pi-coding-agent`；`pi-agent` 依赖 `pi-ai`，新增代码全部放在 `pi-agent/src/main/kotlin/io/github/whywood/deepdeep/sdk/agent/`。`pi-agent` 不应依赖 okhttp（proxy 只依赖 `java.net.http` 或复用 pi-ai 的 HTTP 抽象；现有 `pi-ai/build.gradle.kts` 已含 okhttp，可把 proxy 的 HTTP 客户端抽到 pi-ai 或直接在 pi-agent 用 JDK HttpClient 以避免新依赖）。
 
 建议包划分：
 
@@ -1027,7 +1027,7 @@ Kotlin 协程与 JS 事件循环的三个根本差异，必须在实现里显式
 
 ### 8.11 文件级拆分与代码量估计
 
-主代码（`pi-agent/src/main/kotlin/dev/pi/agent/`）：
+主代码（`pi-agent/src/main/kotlin/io/github/whywood/deepdeep/sdk/agent/`）：
 
 | 文件 | 内容 | 估计行数 |
 |---|---|---|
@@ -1038,7 +1038,7 @@ Kotlin 协程与 JS 事件循环的三个根本差异，必须在实现里显式
 | `StreamFn.kt` | 全局默认 StreamFn | 25-35 |
 | **主代码合计** | | **约 2000-2450** |
 
-测试代码（`pi-agent/src/test/kotlin/dev/pi/agent/`）：
+测试代码（`pi-agent/src/test/kotlin/io/github/whywood/deepdeep/sdk/agent/`）：
 
 | 文件 | 内容 | 估计行数 |
 |---|---|---|

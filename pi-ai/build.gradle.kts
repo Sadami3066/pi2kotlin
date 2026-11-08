@@ -7,7 +7,7 @@ plugins {
 
 kotlin {
     android {
-        namespace = "dev.pi.ai"
+        namespace = "io.github.whywood.deepdeep.sdk.ai"
         compileSdk = 36
         minSdk = 26
         withHostTest {}

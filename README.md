@@ -48,10 +48,10 @@ Then depend on the variant you need:
 
 ```kotlin
 // JVM
-implementation("dev.pi:pi-coding-agent:0.4.0")
+implementation("io.github.whywood.deepdeep.sdk:pi-coding-agent:0.4.0")
 
 // Android
-implementation("dev.pi:pi-coding-agent-android:0.4.0")
+implementation("io.github.whywood.deepdeep.sdk:pi-coding-agent-android:0.4.0")
 ```
 
 Android apps also need `android.useAndroidX=true`.
@@ -59,12 +59,12 @@ Android apps also need `android.useAndroidX=true`.
 ## Quick start
 
 ```kotlin
-import dev.pi.ai.TextDeltaEvent
-import dev.pi.ai.http.okHttpTransport
-import dev.pi.agent.AgentEvent
-import dev.pi.coding.AgentSessionOptions
-import dev.pi.coding.createAgentSession
-import dev.pi.coding.session.SessionEvent
+import io.github.whywood.deepdeep.sdk.ai.TextDeltaEvent
+import io.github.whywood.deepdeep.sdk.ai.http.okHttpTransport
+import io.github.whywood.deepdeep.sdk.agent.AgentEvent
+import io.github.whywood.deepdeep.sdk.coding.AgentSessionOptions
+import io.github.whywood.deepdeep.sdk.coding.createAgentSession
+import io.github.whywood.deepdeep.sdk.coding.session.SessionEvent
 import okio.Path.Companion.toPath
 
 val session = createAgentSession(
@@ -158,7 +158,7 @@ The Android demo lives in `examples/android-demo` (standalone Gradle build) and 
 ```bash
 ./gradlew build                           # compile all targets and run all tests
 ./gradlew :pi-ai:jvmTest                  # fast JVM-only tests
-./gradlew publishToMavenLocal             # publish dev.pi:* artifacts locally
+./gradlew publishToMavenLocal             # publish io.github.whywood.deepdeep.sdk:* artifacts locally
 node scripts/verify-release.mjs 0.4.0     # verify published artifacts (Java 17 bytecode, AARs, POMs)
 ./scripts/release-local.sh 0.4.0          # clean build + tests + local publish + demos + checksums
 ```

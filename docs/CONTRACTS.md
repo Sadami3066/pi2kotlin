@@ -6,7 +6,7 @@
 
 本文件冻结并行开发所依赖的公共签名。实现者不得修改其他任务的签名；需要变更时先通知 lead。
 
-## 已有公共类型（pi-ai，`dev.pi.ai`）
+## 已有公共类型（pi-ai，`io.github.whywood.deepdeep.sdk.ai`）
 
 ```kotlin
 val PiJson: Json
@@ -29,14 +29,14 @@ data class SimpleStreamOptions(val stream: StreamOptions, val toolChoice, val re
 ## task-4（HTTP/流式底层）暴露
 
 ```kotlin
-// dev.pi.ai.http
+// io.github.whywood.deepdeep.sdk.ai.http
 class SseEvent(val event: String?, val data: String, val id: String?, val retry: Long?)
 class SseParser(source: BufferedSource) { suspend fun next(): SseEvent? ; fun close() }
 
-// dev.pi.ai.http（okhttpMain source set）
+// io.github.whywood.deepdeep.sdk.ai.http（okhttpMain source set）
 fun okHttpTransport(client: OkHttpClient = defaultClient()): HttpTransport
 
-// dev.pi.ai.utils
+// io.github.whywood.deepdeep.sdk.ai.utils
 object PartialJson {
     fun parse(text: String): JsonValue?              // 不完整返回已解析部分/null
     fun repair(text: String): String
@@ -62,7 +62,7 @@ object ProviderErrors {
 ## task-5（transcript/校验/估算）暴露
 
 ```kotlin
-// dev.pi.ai.utils.Transcript（顶层函数避免与类名冲突）
+// io.github.whywood.deepdeep.sdk.ai.utils.Transcript（顶层函数避免与类名冲突）
 fun createInitialSystemMessage(systemPrompt: String?, tools: List<Tool>?): SystemMessage?
 fun normalizeContext(context: Context): TranscriptContext
 fun getInitialSystemMessage(messages: List<Message>): SystemMessage?
@@ -76,24 +76,24 @@ fun declarationsEqual(a: Tool, b: Tool): Boolean
 data class ToolStateChanges(val added: List<Tool>, val removed: List<ToolReference>)
 fun getToolStateChanges(previous: List<Tool>, current: List<Tool>): ToolStateChanges
 
-// dev.pi.ai.utils.Text
+// io.github.whywood.deepdeep.sdk.ai.utils.Text
 fun contentText(content: MessageContent, separator: String = "\n"): String
 fun getSystemMessageText(message: SystemMessage): String
 fun renderSystemMessageUpdate(message: SystemMessage): String
 
-// dev.pi.ai.utils.Validation
+// io.github.whywood.deepdeep.sdk.ai.utils.Validation
 class ToolArgumentValidationException(message: String) : Exception(message)
 fun validateToolArguments(tool: Tool, toolCall: ToolCall): JsonObject
 fun validateToolCall(tools: List<Tool>, toolCall: ToolCall): JsonObject
 
-// dev.pi.ai.utils.Estimate
+// io.github.whywood.deepdeep.sdk.ai.utils.Estimate
 fun calculateContextTokens(usage: Usage): Long
 fun estimateTextTokens(text: String): Long
 fun estimateMessageTokens(message: Message): Long
 data class ContextUsageEstimate(val tokens: Long, val usageTokens: Long, val trailingTokens: Long, val lastUsageIndex: Int)
 fun estimateContextTokens(messages: List<Message>): ContextUsageEstimate
 
-// dev.pi.ai.utils.Overflow
+// io.github.whywood.deepdeep.sdk.ai.utils.Overflow
 fun isContextOverflow(message: AssistantMessage, contextWindow: Long? = null): Boolean
 fun isRecoverableLength(message: AssistantMessage, desiredMaxOutput: Long): Boolean
 ```
@@ -103,7 +103,7 @@ fun isRecoverableLength(message: AssistantMessage, desiredMaxOutput: Long): Bool
 ## task-6（openai-completions）暴露
 
 ```kotlin
-// dev.pi.ai.api
+// io.github.whywood.deepdeep.sdk.ai.api
 fun openAICompletionsApi(): ApiProvider
 // ApiProvider: val api: String; suspend fun stream(model, context: TranscriptContext, options: StreamOptions): AssistantMessageEventStream
 //              suspend fun streamSimple(model, context, options: SimpleStreamOptions): AssistantMessageEventStream
@@ -114,7 +114,7 @@ fun openAICompletionsApi(): ApiProvider
 ## task-7（Models/Provider/认证/faux）暴露
 
 ```kotlin
-// dev.pi.ai
+// io.github.whywood.deepdeep.sdk.ai
 interface ApiFactory { fun create(): ApiProvider }
 
 class Provider(
@@ -147,7 +147,7 @@ fun calculateCost(model: AnyModel, usage: Usage): UsageCost
 fun getSupportedThinkingLevels(model: Model): List<ModelThinkingLevel>
 fun clampThinkingLevel(model: Model, level: ModelThinkingLevel): ModelThinkingLevel
 
-// dev.pi.ai.auth
+// io.github.whywood.deepdeep.sdk.ai.auth
 sealed interface AuthResolver { suspend fun resolve(overrides: AuthOverrides? = null): ResolvedAuth? }
 data class ResolvedAuth(val apiKey: String?, val headers: Map<String, String> = emptyMap(), val source: String)
 class EnvApiKeyAuth(val label: String, val envVars: List<String>, val inlineKey: String? = null) : AuthResolver
@@ -161,7 +161,7 @@ faux provider（`providers/Faux.kt`）：移植 `src/providers/faux.ts` 的脚�
 
 ## task-8（pi-agent）暴露
 
-按 `docs/analysis/pi-agent.md` 落地 `dev.pi.agent`：`AgentMessage`/`AgentTool`/`AgentEvent`/`AgentContext`/`AgentState`/`AgentOptions`/`AgentLoopConfig`/`StreamFn`/`Agent`/`runAgentLoop`/`runAgentLoopContinue`/proxy。`StreamFn` 定义为：
+按 `docs/analysis/pi-agent.md` 落地 `io.github.whywood.deepdeep.sdk.agent`：`AgentMessage`/`AgentTool`/`AgentEvent`/`AgentContext`/`AgentState`/`AgentOptions`/`AgentLoopConfig`/`StreamFn`/`Agent`/`runAgentLoop`/`runAgentLoopContinue`/proxy。`StreamFn` 定义为：
 
 ```kotlin
 typealias StreamFn = suspend (model: Model, context: TranscriptContext, options: SimpleStreamOptions?) -> AssistantMessageEventStream
@@ -175,5 +175,5 @@ pi-agent 只依赖 pi-ai 的公共类型与 `utils/` 中已冻结的函数；不
 - 先读 `docs/analysis/` 对应章节（有逐行证据），再读上游 TS 实现。
 - 文件写入范围严格按任务声明；不修改 `build.gradle.kts`、`gradle/libs.versions.toml`、`docs/`（除非任务明确）。
 - 测试：`./gradlew :pi-ai:jvmTest`（只跑 JVM 快速测试）；提交前确保 `:pi-ai:allTests` 绿。
-- 命名：包 `dev.pi.ai` / `dev.pi.agent` / `dev.pi.coding`；不用 `I` 前缀接口。
+- 命名：包 `io.github.whywood.deepdeep.sdk.ai` / `io.github.whywood.deepdeep.sdk.agent` / `io.github.whywood.deepdeep.sdk.coding`；不用 `I` 前缀接口。
 - 完成后 complete task 并给 lead 发消息：文件清单、测试结果、与契约的偏差、遗留项。

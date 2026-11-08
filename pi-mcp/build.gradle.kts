@@ -7,7 +7,7 @@ plugins {
 
 kotlin {
     android {
-        namespace = "dev.pi.mcp"
+        namespace = "io.github.whywood.deepdeep.sdk.mcp"
         compileSdk = 36
         minSdk = 26
         withHostTest {}

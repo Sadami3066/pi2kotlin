@@ -1,0 +1,62 @@
+package io.github.whywood.deepdeep.sdk.ai
+
+import io.github.whywood.deepdeep.sdk.ai.platform.PlatformAtomicBoolean
+import io.github.whywood.deepdeep.sdk.ai.platform.platformCurrentTimeMillis
+import kotlin.time.TimeSource
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.receiveAsFlow
+
+class AssistantMessageEventStream {
+    private val channel = Channel<AssistantMessageEvent>(Channel.UNLIMITED)
+    private val resultDeferred = CompletableDeferred<AssistantMessage>()
+    private val done = PlatformAtomicBoolean(false)
+    private val startedAt = platformCurrentTimeMillis()
+    private val startedAtMark = TimeSource.Monotonic.markNow()
+
+    val events: Flow<AssistantMessageEvent> = channel.receiveAsFlow()
+
+    fun push(event: AssistantMessageEvent) {
+        if (done.get()) return
+        when (event) {
+            is DoneEvent -> {
+                done.set(true)
+                time(event.message)
+            }
+
+            is ErrorEvent -> {
+                done.set(true)
+                time(event.error)
+            }
+
+            else -> Unit
+        }
+        channel.trySend(event)
+        when (event) {
+            is DoneEvent -> resultDeferred.complete(event.message)
+            is ErrorEvent -> resultDeferred.complete(event.error)
+            else -> Unit
+        }
+        if (done.get()) channel.close()
+    }
+
+    fun end(result: AssistantMessage? = null) {
+        if (!done.compareAndSet(false, true)) return
+        if (result != null) {
+            time(result)
+            resultDeferred.complete(result)
+        }
+        channel.close()
+    }
+
+    suspend fun result(): AssistantMessage = resultDeferred.await()
+
+    private fun time(message: AssistantMessage) {
+        if (message.durationMs != null) return
+        if (message.timestamp < startedAt) return
+        message.durationMs = startedAtMark.elapsedNow().inWholeMilliseconds.coerceAtLeast(0)
+    }
+}
+
+fun createAssistantMessageEventStream(): AssistantMessageEventStream = AssistantMessageEventStream()

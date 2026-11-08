@@ -48,10 +48,10 @@ repositories {
 
 ```kotlin
 // JVM
-implementation("dev.pi:pi-coding-agent:0.4.0")
+implementation("io.github.whywood.deepdeep.sdk:pi-coding-agent:0.4.0")
 
 // Android
-implementation("dev.pi:pi-coding-agent-android:0.4.0")
+implementation("io.github.whywood.deepdeep.sdk:pi-coding-agent-android:0.4.0")
 ```
 
 Android 工程还需要 `android.useAndroidX=true`。
@@ -59,12 +59,12 @@ Android 工程还需要 `android.useAndroidX=true`。
 ## 快速开始
 
 ```kotlin
-import dev.pi.ai.TextDeltaEvent
-import dev.pi.ai.http.okHttpTransport
-import dev.pi.agent.AgentEvent
-import dev.pi.coding.AgentSessionOptions
-import dev.pi.coding.createAgentSession
-import dev.pi.coding.session.SessionEvent
+import io.github.whywood.deepdeep.sdk.ai.TextDeltaEvent
+import io.github.whywood.deepdeep.sdk.ai.http.okHttpTransport
+import io.github.whywood.deepdeep.sdk.agent.AgentEvent
+import io.github.whywood.deepdeep.sdk.coding.AgentSessionOptions
+import io.github.whywood.deepdeep.sdk.coding.createAgentSession
+import io.github.whywood.deepdeep.sdk.coding.session.SessionEvent
 import okio.Path.Companion.toPath
 
 val session = createAgentSession(
@@ -158,7 +158,7 @@ Android demo 位于 `examples/android-demo`（独立 Gradle 工程），内置�
 ```bash
 ./gradlew build                           # 编译全部 target 并跑测试
 ./gradlew :pi-ai:jvmTest                  # 只跑 JVM 快速测试
-./gradlew publishToMavenLocal             # 发布 dev.pi:* 到本地
+./gradlew publishToMavenLocal             # 发布 io.github.whywood.deepdeep.sdk:* 到本地
 node scripts/verify-release.mjs 0.4.0     # 校验发布产物（Java 17 字节码/AAR/POM）
 ./scripts/release-local.sh 0.4.0          # clean build + 测试 + 本地发布 + demo + 校验和
 ```
