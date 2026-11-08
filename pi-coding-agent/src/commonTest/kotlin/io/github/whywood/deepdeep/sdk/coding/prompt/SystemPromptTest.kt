@@ -55,7 +55,7 @@ class SystemPromptTest {
         assertEquals(DEFAULT_SYSTEM_PROMPT_PREAMBLE, sections.getValue("preamble"))
         assertEquals(
             "<tools>\n- read: Read file contents\n- bash: Run a shell command\n\n" +
-                "Other tools may be available at runtime; call tool_search when a needed tool is not listed above.\n</tools>",
+                "Plugin and MCP tools are discovered with tool_search, then executed with tool_execute.\n</tools>",
             sections.getValue("tools"),
         )
         assertEquals(
@@ -130,7 +130,7 @@ class SystemPromptTest {
     fun `tools section falls back to none`() {
         val sections = sectionsOf(baseInput(selectedTools = listOf("read")))
         assertEquals(
-                "<tools>\n(none)\n\nOther tools may be available at runtime; call tool_search when a needed tool is not listed above.\n</tools>",
+                "<tools>\n(none)\n\nPlugin and MCP tools are discovered with tool_search, then executed with tool_execute.\n</tools>",
             sections.getValue("tools"),
         )
     }

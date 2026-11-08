@@ -6,5 +6,5 @@ plugins {
 
 subprojects {
     group = "io.github.whywood.deepdeep.sdk"
-    version = "0.6.0"
+    version = "0.6.1"
 }
