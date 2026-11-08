@@ -293,8 +293,12 @@ private suspend fun attachMcp(
         McpConfigLoadResult(emptyList(), emptyList())
     }
     val merged = LinkedHashMap<String, dev.pi.mcp.config.McpServerConfig>()
-    for ((name, config) in loaded.servers) merged[name] = config
-    merged.putAll(mcpOptions.servers)
+    for ((name, config) in loaded.servers) {
+        if (name !in mcpOptions.excludedServers) merged[name] = config
+    }
+    for ((name, config) in mcpOptions.servers) {
+        if (name !in mcpOptions.excludedServers) merged[name] = config
+    }
     for (error in loaded.errors) session.emitSessionEvent(SessionEvent.SessionError(error))
     val callbacks = McpManagerCallbacks(
         toolsAdded = { _, tools -> session.addTools(tools) },

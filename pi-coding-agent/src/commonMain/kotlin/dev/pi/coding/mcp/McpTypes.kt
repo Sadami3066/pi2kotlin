@@ -9,6 +9,7 @@ import okio.Path
 data class McpOptions(
     val enabled: Boolean = true,
     val loadConfig: Boolean = true,
+    val excludedServers: Set<String> = emptySet(),
     val servers: Map<String, McpServerConfig> = emptyMap(),
     val connectTimeoutMs: Long = 10_000,
     val requestTimeoutMs: Long = 60_000,
