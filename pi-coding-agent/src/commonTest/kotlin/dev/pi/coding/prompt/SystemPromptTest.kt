@@ -55,7 +55,7 @@ class SystemPromptTest {
         assertEquals(DEFAULT_SYSTEM_PROMPT_PREAMBLE, sections.getValue("preamble"))
         assertEquals(
             "<tools>\n- read: Read file contents\n- bash: Run a shell command\n\n" +
-                "In addition to the tools above, you may have access to other custom tools depending on the project.\n</tools>",
+                "Other tools may be available at runtime; call tool_search when a needed tool is not listed above.\n</tools>",
             sections.getValue("tools"),
         )
         assertEquals(
@@ -66,20 +66,21 @@ class SystemPromptTest {
             sections.getValue("rules"),
         )
         assertEquals(
-            "<docs>\nPi documentation (read only when the user asks about pi itself, its SDK, extensions, themes, skills, or TUI):\n" +
+            "<docs>\nDeepDeep documentation (read only when the user asks about DeepDeep itself, its SDK, tools, plugins, skills, or app):\n" +
                 "- Main documentation: /pkg/README.md\n" +
                 "- Additional docs: /pkg/docs\n" +
                 "- Examples: /pkg/examples (extensions, custom tools, SDK)\n" +
-                "- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under " +
-                "Examples, not the current working directory\n" +
-                "- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), " +
-                "skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), " +
-                "keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers " +
-                "(docs/custom-provider.md), adding models (docs/models.md), pi packages (docs/packages.md), " +
-                "environment variables (docs/environment-variables.md), MCP servers (docs/mcp.md), codemode scripts " +
-                "and non-LLM models such as classifiers and image models (docs/codemode.md)\n" +
-                "- When working on pi topics, read the docs and examples, and follow .md cross-references before implementing\n" +
-                "- Always read pi .md files completely and follow links to related docs (e.g., tui.md for TUI API details)\n" +
+                "- When reading DeepDeep docs or examples, resolve docs/... under Additional docs and examples/... " +
+                "under Examples, not the current working directory\n" +
+                "- When asked about: the SDK (docs/sdk.md), tools (docs/tools.md), plugins (docs/plugins.md), " +
+                "skills (docs/skills.md), settings (docs/settings.md), models and providers (docs/models.md, " +
+                "docs/custom-provider.md), MCP servers (docs/mcp.md), miniapps (docs/miniapps.md), " +
+                "environment variables (docs/environment-variables.md), or codemode scripts and non-LLM models " +
+                "such as classifiers and image models (docs/codemode.md)\n" +
+                "- When working on DeepDeep topics, read the docs and examples, and follow .md cross-references " +
+                "before implementing\n" +
+                "- Always read DeepDeep .md files completely and follow links to related docs " +
+                "(e.g., tui.md for TUI API details)\n" +
                 "</docs>",
             sections.getValue("docs"),
         )
@@ -129,8 +130,7 @@ class SystemPromptTest {
     fun `tools section falls back to none`() {
         val sections = sectionsOf(baseInput(selectedTools = listOf("read")))
         assertEquals(
-            "<tools>\n(none)\n\nIn addition to the tools above, you may have access to other custom tools " +
-                "depending on the project.\n</tools>",
+                "<tools>\n(none)\n\nOther tools may be available at runtime; call tool_search when a needed tool is not listed above.\n</tools>",
             sections.getValue("tools"),
         )
     }
