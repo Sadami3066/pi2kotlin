@@ -203,6 +203,7 @@ internal fun transformMessages(
     val result = mutableListOf<Message>()
     var pendingToolCalls: List<ToolCall> = emptyList()
     var existingToolResultIds: MutableSet<String> = mutableSetOf()
+    var awaitingToolResultIds: Set<String> = emptySet()
     val heldSystemMessages = mutableListOf<Message>()
 
     fun closePendingToolCalls() {
@@ -231,30 +232,40 @@ internal fun transformMessages(
         when (msg) {
             is AssistantMessage -> {
                 closePendingToolCalls()
-                if (msg.stopReason == io.github.whywood.deepdeep.sdk.ai.StopReason.Error || msg.stopReason == io.github.whywood.deepdeep.sdk.ai.StopReason.Aborted) continue
+                if (msg.stopReason == io.github.whywood.deepdeep.sdk.ai.StopReason.Error || msg.stopReason == io.github.whywood.deepdeep.sdk.ai.StopReason.Aborted) {
+                    awaitingToolResultIds = emptySet()
+                    continue
+                }
                 val toolCalls = msg.content.filterIsInstance<ToolCall>()
-                if (toolCalls.isNotEmpty()) {
+                awaitingToolResultIds = if (toolCalls.isNotEmpty()) {
                     pendingToolCalls = toolCalls
                     existingToolResultIds = mutableSetOf()
+                    toolCalls.mapTo(mutableSetOf()) { it.id }
+                } else {
+                    emptySet()
                 }
                 result.add(msg)
             }
 
             is ToolResultMessage -> {
-                existingToolResultIds.add(msg.toolCallId)
-                result.add(msg)
+                if (msg.toolCallId in awaitingToolResultIds) {
+                    existingToolResultIds.add(msg.toolCallId)
+                    result.add(msg)
+                }
             }
 
             is SystemMessage -> {
                 if (pendingToolCalls.isNotEmpty()) {
                     heldSystemMessages.add(msg)
                 } else {
+                    awaitingToolResultIds = emptySet()
                     result.add(msg)
                 }
             }
 
             is UserMessage -> {
                 closePendingToolCalls()
+                awaitingToolResultIds = emptySet()
                 result.add(msg)
             }
         }

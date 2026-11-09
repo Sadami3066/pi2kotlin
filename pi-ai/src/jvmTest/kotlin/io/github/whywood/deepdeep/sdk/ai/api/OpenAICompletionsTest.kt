@@ -756,6 +756,7 @@ class OpenAICompletionsTest {
                     BlockContent(listOf(ImageContent(data = "AAA", mimeType = "image/png"))),
                     timestamp = 1,
                 ),
+                assistantWithToolCall("call_1", "read", JsonObject(emptyMap())),
                 toolResult("call_1", "read", listOf(ImageContent(data = "BBB", mimeType = "image/png"))),
             ),
         )
