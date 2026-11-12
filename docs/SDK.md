@@ -6,11 +6,26 @@
 
 ```kotlin
 dependencies {
-    implementation("io.github.whywood.deepdeep.sdk:pi-coding-agent:0.4.0")
+    implementation("io.github.whywood.deepdeep.sdk:pi-coding-agent:0.6.3")
 }
 ```
 
-Android 使用 `io.github.whywood.deepdeep.sdk:pi-coding-agent-android:0.4.0`。产物暂未发布到 Maven Central，先执行 `./gradlew publishToMavenLocal`。
+Android 使用 `io.github.whywood.deepdeep.sdk:pi-coding-agent-android:0.6.3`。产物暂未发布到 Maven Central，两种获取方式：
+
+**JitPack**（按 tag 构建，首次请求可能较慢）：
+
+```kotlin
+// settings.gradle.kts
+repositories {
+    maven("https://jitpack.io")
+}
+
+// 模块
+implementation("com.github.Sadami3066.DeepDeep-KotlinSDK:pi-coding-agent:v0.6.3")        // JVM
+implementation("com.github.Sadami3066.DeepDeep-KotlinSDK:pi-coding-agent-android:v0.6.3") // Android
+```
+
+**本地发布**：先执行 `./gradlew publishToMavenLocal`，再依赖 `io.github.whywood.deepdeep.sdk:*:0.6.3`。
 
 模块：`pi-ai`（LLM 统一层）→ `pi-agent`（agent 循环）→ `pi-coding-agent`（会话/工具/提示词/SDK 门面）。targets：Android（minSdk 26）+ JVM（Java 17 字节码）。
 

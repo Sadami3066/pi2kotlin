@@ -145,7 +145,7 @@ val result = session.mcp.signIn(
 - token 持久化到 `<agentDir>/mcp-auth.json`（原子写，0600）。
 - 自动 refresh（提前 30 秒）、401 重试一次、403 `insufficient_scope` step-up。
 - JVM 可用 `io.github.whywood.deepdeep.sdk.mcp.oauth.LoopbackCallbackServer` 起本地回调；Android 需要宿主提供浏览器回调（示例见 `examples/android-demo`）。
-- `auth.provider`（复用 SDK 已登录的 provider token）目前**只解析配置、未接线**，请不要依赖；0.3.0 再补。
+- `auth.provider`（复用 SDK 已登录的 provider token）目前**只解析配置、未接线**，请不要依赖。
 
 ## roots / sampling / elicitation
 

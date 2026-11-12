@@ -6,7 +6,7 @@
 
 [English](README.md)
 
-状态：**0.4.0 alpha**。可编译、可发布 Android AAR 与 JVM JAR；JVM 测试 1,000+、Android host 测试数百；1.0 前 API 仍可能调整。
+状态：**0.6.3**。可编译、可发布 Android AAR 与 JVM JAR；JVM 测试 1,000+、Android host 测试数百；1.0 前 API 仍可能调整。
 
 ## 模块
 
@@ -27,7 +27,26 @@
 
 ## 安装
 
-暂未发布到 Maven Central，两种方式：
+暂未发布到 Maven Central，三种方式：
+
+**JitPack**：加入仓库，用 Git tag 作为版本（`v0.6.3`）：
+
+```kotlin
+// settings.gradle.kts
+repositories {
+    maven("https://jitpack.io")
+}
+```
+
+```kotlin
+// JVM
+implementation("com.github.Sadami3066.DeepDeep-KotlinSDK:pi-coding-agent:v0.6.3")
+
+// Android
+implementation("com.github.Sadami3066.DeepDeep-KotlinSDK:pi-coding-agent-android:v0.6.3")
+```
+
+JitPack 首次被请求某个 tag 时现场构建，第一次解析可能较慢；之后复用缓存。`pi-ai`、`pi-agent`、`pi-mcp` 用同一个 group 与 tag。
 
 **直接下载产物**：从 [GitHub Releases](https://github.com/Sadami3066/pi2kotlin/releases) 下载最新的 `pi2kotlin-*-m2.zip`，解压后把 repository 指向解压目录：
 
@@ -48,10 +67,10 @@ repositories {
 
 ```kotlin
 // JVM
-implementation("io.github.whywood.deepdeep.sdk:pi-coding-agent:0.4.0")
+implementation("io.github.whywood.deepdeep.sdk:pi-coding-agent:0.6.3")
 
 // Android
-implementation("io.github.whywood.deepdeep.sdk:pi-coding-agent-android:0.4.0")
+implementation("io.github.whywood.deepdeep.sdk:pi-coding-agent-android:0.6.3")
 ```
 
 Android 工程还需要 `android.useAndroidX=true`。
@@ -159,8 +178,8 @@ Android demo 位于 `examples/android-demo`（独立 Gradle 工程），内置�
 ./gradlew build                           # 编译全部 target 并跑测试
 ./gradlew :pi-ai:jvmTest                  # 只跑 JVM 快速测试
 ./gradlew publishToMavenLocal             # 发布 io.github.whywood.deepdeep.sdk:* 到本地
-node scripts/verify-release.mjs 0.4.0     # 校验发布产物（Java 17 字节码/AAR/POM）
-./scripts/release-local.sh 0.4.0          # clean build + 测试 + 本地发布 + demo + 校验和
+node scripts/verify-release.mjs 0.6.3     # 校验发布产物（Java 17 字节码/AAR/POM）
+./scripts/release-local.sh 0.6.3          # clean build + 测试 + 本地发布 + demo + 校验和
 ```
 
 低内存机器用 `./scripts/gw.sh <tasks>` 替代 `./gradlew`（串行化构建）。
